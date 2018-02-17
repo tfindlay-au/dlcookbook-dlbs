@@ -22,7 +22,7 @@ is_batch_good "${__batch_file__}" "${exp_replica_batch}" || {
 [ -z "${runtime_launcher}" ] && runtime_launcher=":;"
 script="\
     export ${nvcnn_env};\
-    echo -e \"__exp.framework_ver__= \x22\$(python -c 'import tensorflow as tf; print tf.__version__;')\x22\";\
+    echo -e \"__exp.framework_ver__= \x22\$(python -c 'import tensorflow as tf; print (tf.__version__);')\x22\";\
     echo -e \"__results.start_time__= \x22\$(date +%Y-%m-%d:%H:%M:%S:%3N)\x22\";\
     ${runtime_launcher} ${runtime_python} ${nvcnn_python_path}/nvcnn.py ${nvcnn_args} &\
     proc_pid=\$!;\
