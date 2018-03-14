@@ -13,30 +13,27 @@
 # limitations under the License.
 # ==============================================================================
 
-"""DeepMNIST model configuration.
+"""Lenet model configuration.
 
 References:
-  Ciresan et al. Neural Computation 10, 2010 and arXiv 1003.0358, 2010
-  http://arxiv.org/abs/1003.0358
-  We have 10 classes here (search tf_cnn_benchmarks.py for 'nclass')
-  We also have one channel only (search tf_cnn_benchmarks.py for 'input_nchan =')
+  LeCun, Yann, Leon Bottou, Yoshua Bengio, and Patrick Haffner
+  Gradient-based learning applied to document recognition
+  Proceedings of the IEEE (1998)
 """
 
-import model
+from models import model
 
 
-class DeepMNISTModel(model.Model):
-  """DeepMNIST fully connected model."""
+class Lenet5Model(model.Model):
 
   def __init__(self):
-    super(DeepMNISTModel, self).__init__('deepmnist', 28, 512, 0.005)
+    super(Lenet5Model, self).__init__('lenet5', 28, 32, 0.005)
 
   def add_inference(self, cnn):
-    # We have one channel image of size 28x28
-    cnn.reshape([-1, 28*28])
-    cnn.affine(2500)
-    cnn.affine(2000)
-    cnn.affine(1500)
-    cnn.affine(1500)
-    cnn.affine(1000)
-    cnn.affine(500)
+    # Note: This matches TF's MNIST tutorial model
+    cnn.conv(32, 5, 5)
+    cnn.mpool(2, 2)
+    cnn.conv(64, 5, 5)
+    cnn.mpool(2, 2)
+    cnn.reshape([-1, 64 * 7 * 7])
+    cnn.affine(512)

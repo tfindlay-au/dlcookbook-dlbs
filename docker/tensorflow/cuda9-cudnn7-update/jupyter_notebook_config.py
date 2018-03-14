@@ -1,4 +1,4 @@
-# Copyright 2017 The TensorFlow Authors. All Rights Reserved.
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,25 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+import os
+from IPython.lib import passwd
 
-"""SensorNet model configuration.
+c.NotebookApp.ip = '*'
+c.NotebookApp.port = int(os.getenv('PORT', 8888))
+c.NotebookApp.open_browser = False
+c.MultiKernelManager.default_kernel_name = 'python2'
 
-References:
-"""
-
-import model
-
-
-class SensorNetModel(model.Model):
-  """SensorNet fully connected model."""
-
-  def __init__(self):
-    super(SensorNetModel, self).__init__('sensornet', 28, 512, 0.005)
-
-  def add_inference(self, cnn):
-    # We have one channel image of size 28x28 = 784
-    cnn.reshape([-1, 28*28])
-    cnn.affine(1024)
-    cnn.affine(1024)
-    cnn.affine(1024)
-
+# sets a password if PASSWORD is set in the environment
+if 'PASSWORD' in os.environ:
+  c.NotebookApp.password = passwd(os.environ['PASSWORD'])
+  del os.environ['PASSWORD']

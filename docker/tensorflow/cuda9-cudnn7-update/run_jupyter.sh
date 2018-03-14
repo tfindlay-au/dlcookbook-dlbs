@@ -1,4 +1,5 @@
-# Copyright 2017 The TensorFlow Authors. All Rights Reserved.
+#!/usr/bin/env bash
+# Copyright 2015 The TensorFlow Authors. All Rights Reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,18 +13,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
-"""Trivial model configuration."""
-
-import model
 
 
-class TrivialModel(model.Model):
-  """Trivial model configuration."""
-
-  def __init__(self):
-    super(TrivialModel, self).__init__('trivial', 224 + 3, 32, 0.005)
-
-  def add_inference(self, cnn):
-    cnn.reshape([-1, 227 * 227 * 3])
-    cnn.affine(1)
-    cnn.affine(4096)
+jupyter notebook "$@"
