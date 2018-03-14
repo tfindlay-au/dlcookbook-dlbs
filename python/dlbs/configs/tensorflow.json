@@ -71,6 +71,7 @@
       "val": [
         "--per_gpu_thread_count=1",
         "--xla=$('${tensorflow.use_xla}'.lower())$",
+        "--use_fp16=$('true' if '${exp.dtype}' == 'float16' else 'false')$",
         "--use_tf_layers=true",
         "--staged_vars=false",
         "--model=${exp.model}",
