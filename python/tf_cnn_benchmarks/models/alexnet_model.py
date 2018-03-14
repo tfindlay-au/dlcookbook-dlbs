@@ -51,6 +51,31 @@ class AlexnetModel(model.Model):
     cnn.affine(4096)
     cnn.dropout()
 
+
+class AlexnetOWTModel(model.Model):
+  """Alexnet cnn model."""
+
+  def __init__(self):
+    super(AlexnetOWTModel, self).__init__('alexnet_owt', 224 + 3, 512, 0.005)
+
+  def add_inference(self, cnn):
+    # def conv(self, num_out_channels, k_height, k_width, d_height=1, d_width=1, mode='SAME', ...)
+    # Note: VALID requires padding the images by 3 in width and height
+    # LRN: self, depth_radius, bias, alpha, beta
+    cnn.conv(64, 11, 11, 4, 4, 'VALID')   # Originally 64 output channels
+    cnn.mpool(3, 3, 2, 2)
+    cnn.conv(192, 5, 5)                   # Originally, 192 output channels.
+    cnn.mpool(3, 3, 2, 2)
+    cnn.conv(384, 3, 3)
+    cnn.conv(256, 3, 3)
+    cnn.conv(256, 3, 3)
+    cnn.mpool(3, 3, 2, 2)
+    cnn.reshape([-1, 256 * 6 * 6])
+    cnn.affine(4096)
+    cnn.dropout()
+    cnn.affine(4096)
+    cnn.dropout()
+
 """
 class AlexnetModel(model.Model):
   # Alexnet cnn model.
