@@ -10,10 +10,16 @@
       "type": "str",
       "desc": "Environmental variables to set for TensorRT benchmarks."
     },
-    "tensorrt.calibration_cache_path": { 
+    "tensorrt.cache": { 
       "val": "${HOME}/.tensorrt_cache",
       "type": "str",
-      "desc": "A path to store calibration caches for TensorRT."
+      "desc": [
+        "A path to store calibration caches for TensorRT when running in INT8 inference regime.",
+        "If empty, no cache will be used and calibration will be done with every benchmark what's",
+        "not desireable for models that's input size is large. The advice is to run quick runs for",
+        "every model with this path set what will result in cache being populated. Then run real benchmarks",
+        "and provide same cache path."
+      ]
     },
     "tensorrt.args": { 
       "val": [
@@ -26,7 +32,7 @@
         "$('--profile' if ${tensorrt.profile} is True else '')$",
         "--input ${tensorrt.input}",
         "--output ${tensorrt.output}",
-        "--calibration_cache_path ${tensorrt.calibration_cache_path}"
+        "--cache $('' if '${tensorrt.cache}' == '' else '${tensorrt.cache}' if ${exp.docker} is False else '/workspace/tensorrt_cache')$"
       ],
       "type": "str",
       "desc": "Command line arguments that launcher uses to launch TensorRT."
@@ -53,6 +59,7 @@
         "--pid=host",
         "--volume=${DLBS_ROOT}/models/${exp.model}:/workspace/model",
         "$('--volume=${runtime.cuda_cache}:/workspace/cuda_cache' if '${runtime.cuda_cache}' else '')$",
+        "$('--volume=${tensorrt.cache}:/workspace/tensorrt_cache' if '${tensorrt.cache}' != '' else '')$",
         "$('--volume=${monitor.pid_folder}:/workspace/tmp' if ${monitor.frequency} > 0 else '')$",
         "${exp.docker_args}",
         "${tensorrt.docker_image}"

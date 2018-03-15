@@ -278,7 +278,7 @@ public:
    * @param calibration_cache_path A path to folder that contains calibration cache data. With every model two 
    * files are associated - calibration and hostogram cache files.
    */
-  void initialize(const Dims3 input_shape, const int num_batches, const std::string& model, const std::string& calibration_cache_path) {
+  void initialize(const Dims3 input_shape, const int num_batches, const std::string& model, const std::string& cache_path) {
     std::ostringstream stream;
     stream << "[calibrator] Calibrator::initialize(input_shape=[" << input_shape.c << ", input_shape.h" << ", input_shape.w]"
            << ", num_batches=" << num_batches << ", model = " << model << ")";
@@ -288,10 +288,10 @@ public:
     num_batches_ = num_batches;
     next_batch_ = 0;
 
-    calibration_cache_path_ = calibration_cache_path;
+    cache_path_ = cache_path;
     model_ = model;
 
-    if (calibration_cache_path_ == "") {
+    if (cache_path_ == "") {
       std::cout << "***WARNING***: Calibration cache path is not set." << std::endl;
     } else {
       std::cout << "Calibration cache file: " << get_cache_file("calibration") << std::endl;
@@ -318,8 +318,8 @@ private:
     }
   }
   std::string get_cache_file(const std::string& suffix) const {
-    if (calibration_cache_path_ != "" && model_ != "") {
-      return calibration_cache_path_ + "/" + model_ + "_" + suffix + ".bin";
+    if (cache_path_ != "" && model_ != "") {
+      return cache_path_ + "/" + model_ + "_" + suffix + ".bin";
     }
     return "";
   }
@@ -363,7 +363,7 @@ private:
   
   bool do_log_ = true;
   
-  std::string calibration_cache_path_;  // Path to calibration cache.
+  std::string cache_path_;  // Path to calibration cache.
   std::string model_;                   // Neural network model (to save/load calibration caches).
   char* calibration_cache_ = nullptr;   // Calibration cache loaded from file.
   size_t calibration_cache_length_ = 0;
@@ -387,7 +387,7 @@ void report_results(std::vector<float>& vec, const std::string& name_prefix, con
  */
 int main(int argc, char **argv) {
   // Define and parse commadn lien arguments
-  std::string model, model_file, dtype("float32"), input_name("data"), output_name("prob"), calibration_cache_path("");
+  std::string model, model_file, dtype("float32"), input_name("data"), output_name("prob"), cache_path("");
   int batch_size(1), num_warmup_batches(0), num_batches(1);
   namespace po = boost::program_options;
   po::options_description desc("Options");
@@ -403,7 +403,7 @@ int main(int argc, char **argv) {
     ("profile",  "Profile model and report results.")
     ("input", po::value<std::string>(&input_name), "Name of an input data tensor (data).")
     ("output", po::value<std::string>(&output_name), "Name of an output data tensor (prob).")
-    ("calibration_cache_path", po::value<std::string>(&calibration_cache_path), "Path to folder that will be used to store models calibration data.");
+    ("cache", po::value<std::string>(&cache_path), "Path to folder that will be used to store models calibration data.");
   po::variables_map vm;
   
   try {
@@ -466,12 +466,7 @@ int main(int argc, char **argv) {
 
     // Allocate memory but before figure out size of input tensor.
     const nvinfer1::ITensor* input_tensor = blob_name_to_tensor->find(input_name.c_str());
-    g_calibrator.initialize(
-      input_tensor->getDimensions(),
-      10,
-      model,
-      calibration_cache_path
-    );
+    g_calibrator.initialize(input_tensor->getDimensions(), 10, model, cache_path);
 
     builder->setInt8Mode(true);
     builder->setInt8Calibrator(&g_calibrator);

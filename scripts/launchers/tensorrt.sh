@@ -29,7 +29,7 @@ net_name=$(get_value_by_key "${host_model_dir}/${caffe_model_file}" "name")
 echo "__exp.model_title__= \"${net_name}\"" >> ${exp_log_file}
 
 # If does not exist, create calibration cache path
-[ ! -z ${tensorrt_calibration_cache_path} ] && mkdir -p ${tensorrt_calibration_cache_path}
+[ ! -z ${tensorrt_cache} ] && mkdir -p ${tensorrt_cache}
 # This script is to be executed inside docker container or on a host machine.
 # Thus, the environment must be initialized inside this scrip lazily.
 [ -z "${runtime_launcher}" ] && runtime_launcher=":;"
