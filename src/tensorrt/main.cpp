@@ -182,22 +182,26 @@ public:
     }
     stream << "], nbBindings=" << nbBindings << ")";
     log(stream.str());
+    if (nbBindings != 1) {
+      std::cout << "***ERROR*** Exactly one input must present but found " << nbBindings << " input(s)." << std::endl;
+      exit(1);
+    }
     // Make sure that this calibrator was initialized.
     if (num_batches_ <= 0) {
       std::cout << "***ERROR***: Suspicious number of batches (0) in calibrator::getBatch()." << std::endl;
       exit(1);
     }
-    // Lazy memory allocation - allocate only we are here.
-    if (next_batch_ == 0) {
-      batch_.resize(batch_size_ * input_size_);
-      cudaCheck(cudaMalloc(&(batch_mem_), sizeof(float) * batch_size_ * input_size_));
+    // Lazy memory allocation - allocate only if we are here.
+    if (gpu_batch_ == nullptr) {
+      host_batch_.resize(batch_size_ * input_size_);
+      cudaCheck(cudaMalloc(&(gpu_batch_), sizeof(float) * batch_size_ * input_size_));
     }
     //
     if (next_batch_ >= num_batches_) { return false; }
     //
-    fill_random(batch_);
-    cudaCheck(cudaMemcpy(batch_mem_, batch_.data(), sizeof(float) * batch_.size(), cudaMemcpyHostToDevice));
-    bindings[0] = batch_mem_;
+    fill_random(host_batch_);
+    cudaCheck(cudaMemcpy(gpu_batch_, host_batch_.data(), sizeof(float) * host_batch_.size(), cudaMemcpyHostToDevice));
+    bindings[0] = gpu_batch_;
     next_batch_ ++;
     return true; 
   }
@@ -220,16 +224,14 @@ public:
     log(stream.str());
     return cutoff_; 
   }
-  const void* readCalibrationCache(size_t& length) override { 
+  const void* readCalibrationCache(size_t& length/*output param*/) override {
     std::ostringstream stream;
-    stream << "[calibrator] Calibrator::readCalibrationCache(length=" << length << ")";
+    stream << "[calibrator] Calibrator::readCalibrationCache()";
     log(stream.str());
-    update_cache(calibration_cache_, calibration_cache_length_, get_calibration_cache_file());
+    update_cache(calibration_cache_, calibration_cache_length_, get_cache_file("calibration"));
     length = calibration_cache_length_;
     if (calibration_cache_ != nullptr) {
-      std::cout << "Calibration cache has succesfully been read." << std::endl;
-    } else {
-      length = 0;
+      std::cout << "Calibration cache has succesfully been read (length=" << length << ")." << std::endl;
     }
     return (const void*)calibration_cache_;
   }
@@ -237,18 +239,16 @@ public:
     std::ostringstream stream;
     stream << "[calibrator] Calibrator::writeCalibrationCache(length=" << length << ")";
     log(stream.str());
-    write_data(get_calibration_cache_file(), ptr, length);
+    write_data(get_cache_file("calibration"), ptr, length);
   }
-  const void* readHistogramCache(size_t& length) override { 
+  const void* readHistogramCache(size_t& length/*output param*/) override { 
     std::ostringstream stream;
-    stream << "[calibrator] Calibrator::readHistogramCache(length=" << length << ")";
+    stream << "[calibrator] Calibrator::readHistogramCache()";
     log(stream.str());
-    update_cache(histogram_cache_, histogram_cache_length_, get_histogram_cache_file());
+    update_cache(histogram_cache_, histogram_cache_length_, get_cache_file("histogram"));
     length = histogram_cache_length_;
     if (histogram_cache_ != nullptr) {
-      std::cout << "Histogram cache has succesfully been read." << std::endl;
-    } else {
-      length = 0;
+      std::cout << "Histogram cache has succesfully been read(length=" << length << ")." << std::endl;
     }
     return (const void*)histogram_cache_;
   }
@@ -256,7 +256,7 @@ public:
     std::ostringstream stream;
     stream << "[calibrator] Calibrator::writeHistogramCache(length=" << length << ")";
     log(stream.str());
-    write_data(get_histogram_cache_file(), ptr, length);
+    write_data(get_cache_file("histogram"), ptr, length);
   }
   void setLog(const bool do_log=true) {
     std::ostringstream stream;
@@ -270,35 +270,38 @@ public:
     log(stream.str());
     batch_size_ = batch_size;
   }
-  void allocCalibrationMemory(const int input_size, const int num_batches, const std::string& model, const std::string& calibration_cache_path) {
+  /**
+   * Initialize Calibrator. No memory allocations are done here.
+   * @param input_shape The shape of single input instance. Does not include batch dimension.
+   * @param num_batches Numebr of calibration iterations.
+   * @param model A neural network model identifier such as alexnet, resnet101, vgg13 etc.
+   * @param calibration_cache_path A path to folder that contains calibration cache data. With every model two 
+   * files are associated - calibration and hostogram cache files.
+   */
+  void initialize(const Dims3 input_shape, const int num_batches, const std::string& model, const std::string& calibration_cache_path) {
     std::ostringstream stream;
-    stream << "[calibrator] Calibrator::allocCalibrationMemory(input_size=" << input_size
+    stream << "[calibrator] Calibrator::initialize(input_shape=[" << input_shape.c << ", input_shape.h" << ", input_shape.w]"
            << ", num_batches=" << num_batches << ", model = " << model << ")";
     log(stream.str());
-    
-    if (batch_size_ <= 0) {
-      std::cout << "***ERROR***: Batch size needs to be set first. Use 'calibrator::setBatchSize()'" << std::endl;
-      exit(1);
-    }
-    
-    input_size_ = input_size;
+
+    input_size_ = input_shape.c * input_shape.w * input_shape.h;
     num_batches_ = num_batches;
     next_batch_ = 0;
-    
+
     calibration_cache_path_ = calibration_cache_path;
     model_ = model;
-    
+
     if (calibration_cache_path_ == "") {
       std::cout << "***WARNING***: Calibration cache path is not set." << std::endl;
     } else {
-      std::cout << "Calibration cache file: " << get_calibration_cache_file() << std::endl;
-      std::cout << "Histogram cache file: " << get_histogram_cache_file() << std::endl;
+      std::cout << "Calibration cache file: " << get_cache_file("calibration") << std::endl;
+      std::cout << "Histogram cache file: " << get_cache_file("histogram") << std::endl;
     }
   }
   void freeCalibrationMemory() {
     log("[calibrator] Calibrator::freeCalibrationMemory");
-    cudaFree(batch_mem_);
-    batch_.clear();
+    cudaFree(gpu_batch_);
+    host_batch_.clear();
     if (calibration_cache_ != nullptr) {
       delete [] calibration_cache_;
       calibration_cache_length_ = 0;
@@ -314,24 +317,18 @@ private:
       std::cout << msg << std::endl;
     }
   }
-  
-  std::string get_calibration_cache_file() const {
+  std::string get_cache_file(const std::string& suffix) const {
     if (calibration_cache_path_ != "" && model_ != "") {
-      return calibration_cache_path_ + "/" + model_ + "_calibration.bin";
-    }
-    return "";
-  }
-  
-  std::string get_histogram_cache_file() const {
-    if (calibration_cache_path_ != "" && model_ != "") {
-      return calibration_cache_path_ + "/" + model_ + "_histogram.bin";
+      return calibration_cache_path_ + "/" + model_ + "_" + suffix + ".bin";
     }
     return "";
   }
   void write_data(const std::string& fname, const void* ptr, size_t length) {
     if (fname != "") {
       std::ofstream file(fname.c_str(), std::ios::binary);
-      file.write((char*)ptr, length);
+      if (file.is_open()) {
+        file.write((char*)ptr, length);
+      }
     }
   }
   char* read_data(const std::string& fname, size_t& data_length) {
@@ -339,16 +336,13 @@ private:
       std::ifstream file(fname.c_str(), std::ios::binary|std::ios::ate);
       if (file.is_open()) {
         data_length = file.tellg();
-        std::cout << "Will read " << data_length << " bytes from " << fname << " file" << std::endl;
         char* data = new char[data_length];
         file.seekg(0, std::ios::beg);
         file.read(data, data_length);
-        std::cout << "Data read!\n";
         return data;
       }
-    } else {
-      data_length = 0;
     }
+    data_length = 0;
     return nullptr;
   }
   void update_cache(char*& cache_data, size_t& cache_length, const std::string& fname) {
@@ -361,8 +355,8 @@ private:
   int input_size_ = 0;                  // Size of one instance (multiplication of all dimensions)
   int num_batches_ = 0;                 // Number of batches to use for calibration
   int next_batch_ = 0;                  // During calibration, index of the next batch
-  std::vector<float> batch_;            // Batch data in host memory
-  void *batch_mem_ = nullptr;           // Batch data in GPU memory
+  std::vector<float> host_batch_;       // Batch data in host memory
+  void *gpu_batch_ = nullptr;           // Batch data in GPU memory
   
   double quantile_ = 0.5;
   double cutoff_ = 0.5;
@@ -472,10 +466,8 @@ int main(int argc, char **argv) {
 
     // Allocate memory but before figure out size of input tensor.
     const nvinfer1::ITensor* input_tensor = blob_name_to_tensor->find(input_name.c_str());
-    const Dims3 input_dims = input_tensor->getDimensions();
-    const auto input_sz = input_dims.c * input_dims.h * input_dims.w;
-    g_calibrator.allocCalibrationMemory(
-      batch_size * input_dims.c * input_dims.h * input_dims.w,
+    g_calibrator.initialize(
+      input_tensor->getDimensions(),
       10,
       model,
       calibration_cache_path
