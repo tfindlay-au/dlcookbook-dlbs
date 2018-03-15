@@ -20,10 +20,12 @@
 #include <string>
 #include <random>
 #include <map>
+#include <ios>
 #include <functional>
 #include <algorithm>
 #include <chrono>
 #include <sstream>
+#include <fstream>
 #include <ctime>
 
 #include <string.h>
@@ -52,6 +54,10 @@ inline void cudaCheckf(const cudaError_t code, const char *file, const int line,
     if (abort) exit(code);
   }
 }
+
+// Get environmental variables.
+bool get_boolean_env_var(const std::string& name, bool default_value);
+std::string get_string_env_var(const std::string& name, const std::string& default_value);
 
 // Fill vector with random numebrs uniformly dsitributed in [0, 1).
 void fill_random(std::vector<float>& vec);
@@ -145,6 +151,11 @@ struct profiler : public IProfiler {
 
 } g_profiler;
 
+/**
+ * TODO: Is it true that we can run first all networks with small batch sizes to create fake calibration 
+ *       caches and then just load that. The problem is that with large batch size calibration memory takes
+ *       too much memory, for instance, an input image of 3x255x255x512 = 381 MB where 512 is a batch size.
+ */
 class calibrator : public IInt8Calibrator {
 public:
   // The batch size is for a calibration stage.
@@ -171,10 +182,15 @@ public:
     }
     stream << "], nbBindings=" << nbBindings << ")";
     log(stream.str());
-    //
+    // Make sure that this calibrator was initialized.
     if (num_batches_ <= 0) {
       std::cout << "***ERROR***: Suspicious number of batches (0) in calibrator::getBatch()." << std::endl;
       exit(1);
+    }
+    // Lazy memory allocation - allocate only we are here.
+    if (next_batch_ == 0) {
+      batch_.resize(batch_size_ * input_size_);
+      cudaCheck(cudaMalloc(&(batch_mem_), sizeof(float) * batch_size_ * input_size_));
     }
     //
     if (next_batch_ >= num_batches_) { return false; }
@@ -208,24 +224,39 @@ public:
     std::ostringstream stream;
     stream << "[calibrator] Calibrator::readCalibrationCache(length=" << length << ")";
     log(stream.str());
-    return nullptr; 
+    update_cache(calibration_cache_, calibration_cache_length_, get_calibration_cache_file());
+    length = calibration_cache_length_;
+    if (calibration_cache_ != nullptr) {
+      std::cout << "Calibration cache has succesfully been read." << std::endl;
+    } else {
+      length = 0;
+    }
+    return (const void*)calibration_cache_;
   }
-  void writeCalibrationCache(const void* ptr, size_t length) override { 
+  void writeCalibrationCache(const void* ptr, size_t length) override {
     std::ostringstream stream;
     stream << "[calibrator] Calibrator::writeCalibrationCache(length=" << length << ")";
     log(stream.str());
+    write_data(get_calibration_cache_file(), ptr, length);
   }
   const void* readHistogramCache(size_t& length) override { 
     std::ostringstream stream;
     stream << "[calibrator] Calibrator::readHistogramCache(length=" << length << ")";
     log(stream.str());
-    return nullptr; 
+    update_cache(histogram_cache_, histogram_cache_length_, get_histogram_cache_file());
+    length = histogram_cache_length_;
+    if (histogram_cache_ != nullptr) {
+      std::cout << "Histogram cache has succesfully been read." << std::endl;
+    } else {
+      length = 0;
+    }
+    return (const void*)histogram_cache_;
   }
   void writeHistogramCache(const void* ptr, size_t length) override { 
     std::ostringstream stream;
     stream << "[calibrator] Calibrator::writeHistogramCache(length=" << length << ")";
     log(stream.str());
-    log("Calibrator::writeHistogramCache");
+    write_data(get_histogram_cache_file(), ptr, length);
   }
   void setLog(const bool do_log=true) {
     std::ostringstream stream;
@@ -239,9 +270,10 @@ public:
     log(stream.str());
     batch_size_ = batch_size;
   }
-  void allocCalibrationMemory(const int input_size, const int num_batches) {
+  void allocCalibrationMemory(const int input_size, const int num_batches, const std::string& model, const std::string& calibration_cache_path) {
     std::ostringstream stream;
-    stream << "[calibrator] Calibrator::allocCalibrationMemory(input_size=" << input_size << ", num_batches=" << num_batches << ")";
+    stream << "[calibrator] Calibrator::allocCalibrationMemory(input_size=" << input_size
+           << ", num_batches=" << num_batches << ", model = " << model << ")";
     log(stream.str());
     
     if (batch_size_ <= 0) {
@@ -253,13 +285,28 @@ public:
     num_batches_ = num_batches;
     next_batch_ = 0;
     
-    batch_.resize(batch_size_ * input_size_);
-    cudaCheck(cudaMalloc(&(batch_mem_), sizeof(float) * batch_size_ * input_size_));
+    calibration_cache_path_ = calibration_cache_path;
+    model_ = model;
+    
+    if (calibration_cache_path_ == "") {
+      std::cout << "***WARNING***: Calibration cache path is not set." << std::endl;
+    } else {
+      std::cout << "Calibration cache file: " << get_calibration_cache_file() << std::endl;
+      std::cout << "Histogram cache file: " << get_histogram_cache_file() << std::endl;
+    }
   }
   void freeCalibrationMemory() {
     log("[calibrator] Calibrator::freeCalibrationMemory");
     cudaFree(batch_mem_);
     batch_.clear();
+    if (calibration_cache_ != nullptr) {
+      delete [] calibration_cache_;
+      calibration_cache_length_ = 0;
+    }
+    if (histogram_cache_ != nullptr) {
+      delete [] histogram_cache_;
+      histogram_cache_length_ = 0;
+    }
   }
 private:
   void log(const std::string& msg) const {
@@ -267,18 +314,67 @@ private:
       std::cout << msg << std::endl;
     }
   }
+  
+  std::string get_calibration_cache_file() const {
+    if (calibration_cache_path_ != "" && model_ != "") {
+      return calibration_cache_path_ + "/" + model_ + "_calibration.bin";
+    }
+    return "";
+  }
+  
+  std::string get_histogram_cache_file() const {
+    if (calibration_cache_path_ != "" && model_ != "") {
+      return calibration_cache_path_ + "/" + model_ + "_histogram.bin";
+    }
+    return "";
+  }
+  void write_data(const std::string& fname, const void* ptr, size_t length) {
+    if (fname != "") {
+      std::ofstream file(fname.c_str(), std::ios::binary);
+      file.write((char*)ptr, length);
+    }
+  }
+  char* read_data(const std::string& fname, size_t& data_length) {
+    if (fname != "") {
+      std::ifstream file(fname.c_str(), std::ios::binary|std::ios::ate);
+      if (file.is_open()) {
+        data_length = file.tellg();
+        std::cout << "Will read " << data_length << " bytes from " << fname << " file" << std::endl;
+        char* data = new char[data_length];
+        file.seekg(0, std::ios::beg);
+        file.read(data, data_length);
+        std::cout << "Data read!\n";
+        return data;
+      }
+    } else {
+      data_length = 0;
+    }
+    return nullptr;
+  }
+  void update_cache(char*& cache_data, size_t& cache_length, const std::string& fname) {
+    if (cache_data == nullptr) {
+      cache_data = read_data(fname, cache_length);
+    }
+  }
 private:
-  int batch_size_ = 0;             // Batch size (number of instances)
-  int input_size_ = 0;             // Size of one instance (multiplication of all dimensions)
-  int num_batches_ = 0;            // Number of batches to use for calibration
-  int next_batch_ = 0;             // During calibration, index of the next batch
-  std::vector<float> batch_;       // Batch data in host memory
-  void *batch_mem_ = nullptr;      // Batch data in GPU memory
+  int batch_size_ = 0;                  // Batch size (number of instances)
+  int input_size_ = 0;                  // Size of one instance (multiplication of all dimensions)
+  int num_batches_ = 0;                 // Number of batches to use for calibration
+  int next_batch_ = 0;                  // During calibration, index of the next batch
+  std::vector<float> batch_;            // Batch data in host memory
+  void *batch_mem_ = nullptr;           // Batch data in GPU memory
   
   double quantile_ = 0.5;
   double cutoff_ = 0.5;
   
   bool do_log_ = true;
+  
+  std::string calibration_cache_path_;  // Path to calibration cache.
+  std::string model_;                   // Neural network model (to save/load calibration caches).
+  char* calibration_cache_ = nullptr;   // Calibration cache loaded from file.
+  size_t calibration_cache_length_ = 0;
+  char* histogram_cache_ = nullptr;     // Histogram cache loaded from file.
+  size_t histogram_cache_length_ = 0;
 } g_calibrator;
 
 // Get number of elements in this tensor (blob).
@@ -297,21 +393,23 @@ void report_results(std::vector<float>& vec, const std::string& name_prefix, con
  */
 int main(int argc, char **argv) {
   // Define and parse commadn lien arguments
-  std::string model, dtype("float32"), input_name("data"), output_name("prob");
+  std::string model, model_file, dtype("float32"), input_name("data"), output_name("prob"), calibration_cache_path("");
   int batch_size(1), num_warmup_batches(0), num_batches(1);
   namespace po = boost::program_options;
   po::options_description desc("Options");
   desc.add_options()
     ("help",  "Print help message")
     ("version",  "Print version")
-    ("model", po::value<std::string>(&model)->required(), "Caffe's prototxt deploy (inference) model.")
+    ("model", po::value<std::string>(&model), "Model identifier like alexnet, resent18 etc. Used to store calibration caches.")
+    ("model_file", po::value<std::string>(&model_file)->required(), "Caffe's prototxt deploy (inference) model.")
     ("batch_size", po::value<int>(&batch_size), "Per device batch size.")
     ("dtype", po::value<std::string>(&dtype), "Type of data variables: float(same as float32), float32, float16 or int8.")
     ("num_warmup_batches", po::value<int>(&num_warmup_batches), "Number of warmup iterations.")
     ("num_batches", po::value<int>(&num_batches), "Number of benchmark iterations.")
     ("profile",  "Profile model and report results.")
     ("input", po::value<std::string>(&input_name), "Name of an input data tensor (data).")
-    ("output", po::value<std::string>(&output_name), "Name of an output data tensor (prob).");
+    ("output", po::value<std::string>(&output_name), "Name of an output data tensor (prob).")
+    ("calibration_cache_path", po::value<std::string>(&calibration_cache_path), "Path to folder that will be used to store models calibration data.");
   po::variables_map vm;
   
   try {
@@ -348,11 +446,11 @@ int main(int argc, char **argv) {
 
   // Parse the caffe model to populate the network, then set the outputs.
   // For INT8 inference, the input model must be specified with 32-bit weights.
-  g_logger.log_info("[main] Creating network and Caffe parser (model: " + model + ")");
+  g_logger.log_info("[main] Creating network and Caffe parser (model: " + model_file + ")");
   INetworkDefinition* network = builder->createNetwork();
   ICaffeParser* caffe_parser = createCaffeParser();
   const IBlobNameToTensor* blob_name_to_tensor = caffe_parser->parse(
-    model.c_str(), // *.prototxt caffe model definition
+    model_file.c_str(), // *.prototxt caffe model definition
     nullptr,       // if null, random weights?
     *network, 
     (data_type == DataType::kINT8 ? DataType::kFLOAT : data_type)
@@ -378,7 +476,9 @@ int main(int argc, char **argv) {
     const auto input_sz = input_dims.c * input_dims.h * input_dims.w;
     g_calibrator.allocCalibrationMemory(
       batch_size * input_dims.c * input_dims.h * input_dims.w,
-      10
+      10,
+      model,
+      calibration_cache_path
     );
 
     builder->setInt8Mode(true);
@@ -468,6 +568,26 @@ int main(int argc, char **argv) {
   builder->destroy();
 
   return 0;
+}
+
+bool get_boolean_env_var(const std::string& name, bool default_value) {
+  const char* buffer = getenv(name.c_str());
+  if (buffer == nullptr) {
+    return default_value;
+  }
+  const std::string value(buffer);
+  if (value == "true" || value == "1") {
+    return true;
+  }
+  return false;
+}
+
+std::string get_string_env_var(const std::string& name, const std::string& default_value) {
+  const char* buffer = getenv(name.c_str());
+  if (buffer == nullptr) {
+    return default_value;
+  }
+  return std::string(buffer);
 }
 
 int get_binding_size(ICudaEngine* engine, const int idx) {

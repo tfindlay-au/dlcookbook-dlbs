@@ -10,16 +10,23 @@
       "type": "str",
       "desc": "Environmental variables to set for TensorRT benchmarks."
     },
+    "tensorrt.calibration_cache_path": { 
+      "val": "${HOME}/.tensorrt_cache",
+      "type": "str",
+      "desc": "A path to store calibration caches for TensorRT."
+    },
     "tensorrt.args": { 
       "val": [
-        "--model ${tensorrt.model_dir}/${tensorrt.model_file}",
+        "--model ${exp.model}",
+        "--model_file ${tensorrt.model_dir}/${tensorrt.model_file}",
         "--batch_size ${exp.replica_batch}",
         "--dtype ${exp.dtype}",
         "--num_warmup_batches ${exp.num_warmup_batches}",
         "--num_batches ${exp.num_batches}",
         "$('--profile' if ${tensorrt.profile} is True else '')$",
         "--input ${tensorrt.input}",
-        "--output ${tensorrt.output}"
+        "--output ${tensorrt.output}",
+        "--calibration_cache_path ${tensorrt.calibration_cache_path}"
       ],
       "type": "str",
       "desc": "Command line arguments that launcher uses to launch TensorRT."
