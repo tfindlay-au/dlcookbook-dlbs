@@ -62,6 +62,9 @@ std::string get_string_env_var(const std::string& name, const std::string& defau
 // Fill vector with random numebrs uniformly dsitributed in [0, 1).
 void fill_random(std::vector<float>& vec);
 
+// Return number of elements in Tensor
+long get_tensor_size(const ITensor* tensor);
+
 // A simple timer implementation.
 class timer {
 public:
@@ -156,7 +159,11 @@ struct profiler : public IProfiler {
  *       caches and then just load that. The problem is that with large batch size calibration memory takes
  *       too much memory, for instance, an input image of 3x255x255x512 = 381 MB where 512 is a batch size.
  */
+#if NV_TENSORRT_MAJOR >= 3
+class calibrator : public IInt8LegacyCalibrator {
+#else
 class calibrator : public IInt8Calibrator {
+#endif
 public:
   // The batch size is for a calibration stage.
   int getBatchSize() const override { 
@@ -278,13 +285,13 @@ public:
    * @param calibration_cache_path A path to folder that contains calibration cache data. With every model two 
    * files are associated - calibration and hostogram cache files.
    */
-  void initialize(const Dims3 input_shape, const int num_batches, const std::string& model, const std::string& cache_path) {
+  void initialize(const long input_size, const int num_batches, const std::string& model, const std::string& cache_path) {
     std::ostringstream stream;
-    stream << "[calibrator] Calibrator::initialize(input_shape=[" << input_shape.c << ", input_shape.h" << ", input_shape.w]"
+    stream << "[calibrator] Calibrator::initialize(input_size=" << input_size
            << ", num_batches=" << num_batches << ", model = " << model << ")";
     log(stream.str());
 
-    input_size_ = input_shape.c * input_shape.w * input_shape.h;
+    input_size_ = input_size;
     num_batches_ = num_batches;
     next_batch_ = 0;
 
@@ -352,7 +359,7 @@ private:
   }
 private:
   int batch_size_ = 0;                  // Batch size (number of instances)
-  int input_size_ = 0;                  // Size of one instance (multiplication of all dimensions)
+  long input_size_ = 0;                 // Size of one instance (multiplication of all dimensions)
   int num_batches_ = 0;                 // Number of batches to use for calibration
   int next_batch_ = 0;                  // During calibration, index of the next batch
   std::vector<float> host_batch_;       // Batch data in host memory
@@ -466,7 +473,7 @@ int main(int argc, char **argv) {
 
     // Allocate memory but before figure out size of input tensor.
     const nvinfer1::ITensor* input_tensor = blob_name_to_tensor->find(input_name.c_str());
-    g_calibrator.initialize(input_tensor->getDimensions(), 10, model, cache_path);
+    g_calibrator.initialize(get_tensor_size(input_tensor), 10, model, cache_path);
 
     builder->setInt8Mode(true);
     builder->setInt8Calibrator(&g_calibrator);
@@ -557,6 +564,21 @@ int main(int argc, char **argv) {
   return 0;
 }
 
+long get_tensor_size(const ITensor* tensor) {
+#if NV_TENSORRT_MAJOR >= 3
+  Dims shape = tensor->getDimensions();
+  long sz = 1;
+  for (int i=0; i<shape.nbDims; ++i) {
+    sz *= shape.d[i];
+  }
+  return sz;
+#else
+  // Legacy TensorRT returns Dims3 object
+  Dims3 shape = tensor->getDimensions();
+  return long(shape.c) * shape.w * shape.h
+#endif
+}
+
 bool get_boolean_env_var(const std::string& name, bool default_value) {
   const char* buffer = getenv(name.c_str());
   if (buffer == nullptr) {
@@ -578,8 +600,18 @@ std::string get_string_env_var(const std::string& name, const std::string& defau
 }
 
 int get_binding_size(ICudaEngine* engine, const int idx) {
+#if NV_TENSORRT_MAJOR >= 3
+  const Dims shape = engine->getBindingDimensions(idx);
+  long sz = 1;
+  for (int i=0; i<shape.nbDims; ++i) {
+    sz *= shape.d[i];
+  }
+  return sz;
+#else
+  // Legacy TensorRT returns Dims3 object
   const Dims3 dims = engine->getBindingDimensions(idx);
   return dims.c * dims.h * dims.w;
+#endif
 }
 
 void fill_random(std::vector<float>& vec) {
@@ -595,8 +627,18 @@ void report_bindings(ICudaEngine* engine) {
   std::cout << "engine::number of bindings = " << num_bindings << std::endl;
   for (auto i=0; i<num_bindings; ++i) {
     std::cout << "engine::binding index = " << i << ", name = " << engine->getBindingName(i) << ", is input = " << engine->bindingIsInput(i);
+#if NV_TENSORRT_MAJOR >= 3
+  const Dims shape = engine->getBindingDimensions(i);
+  std::cout << ", shape=[";
+  for (int i=0; i<shape.nbDims; ++i) {
+    if (i != 0) std::cout << ", ";
+    std::cout << shape.d[i];
+  }
+  std::cout << "]" << std::endl;
+#else
     const Dims3 dims = engine->getBindingDimensions(i);
-    std::cout << ", shape = " << dims.c << "," << dims.h << "," << dims.w << std::endl;
+    std::cout << ", shape=[" << dims.c << ", " << dims.h << ", " << dims.w << "]" << std::endl;
+#endif
   }
 }
 
