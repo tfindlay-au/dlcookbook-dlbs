@@ -16,6 +16,10 @@ https://github.com/apache/incubator-mxnet/blob/master/example/image-classificati
 
 Visualization (may be slightly different from this implementation):
 http://ethereon.github.io/netscope/#/gist/95826c28109d1a5ab95306c37bb30225
+
+This class provides additional functionality not found in other models
+that allows integrating this code with resnet50_trainer.py
+
 """
 from __future__ import absolute_import
 from caffe2.python import brew
@@ -32,6 +36,9 @@ class InceptionResNetV2(Model):
              'num_classes': 1000, 'arg_scope': {'order': 'NCHW'}}
         )
         Model.__init__(self, params)
+        self.__run_with_resnet50_trainer = False
+        if 'run_with_resnet50_trainer' in params:
+            self.__run_with_resnet50_trainer = params['run_with_resnet50_trainer']
 
     def conv_factory(self, model, v, num_in_channels, num_filters, kernel,
                      stride=1, pad=0, relu=True, name='conv'):
@@ -200,4 +207,36 @@ class InceptionResNetV2(Model):
         pool8 = brew.average_pool(model, conv6, 'pool8', kernel=8, global_pool=True)              #1536x1x1
         drop8 = brew.dropout(model, pool8, 'dtop8', ratio=0.2,                                    #1536x1x1
                              is_test=(self.phase == 'inference'))
-        return self.add_head_nodes(model, drop8, 1536, 'classifier', loss_scale=loss_scale)
+
+        if not self.__run_with_resnet50_trainer:
+            return self.add_head_nodes(model, drop8, 1536, 'classifier', loss_scale=loss_scale)
+        else:
+            return brew.fc(model, drop8, 'classifier', dim_in=1536, dim_out=self.num_classes)
+
+
+def create_inception_resnet_v2(model, data_node, num_input_channels=3, num_labels=1000,
+                               no_bias=True, no_loss=True):
+    """ This function should be used to create the Inception ResNet V2 model
+    in resnet50_trainer.py. Find in that file the function 'create_resnet50_model_ops'
+    and replace there call to 'resnet.create_resnet50' with this one 'create_inception_resnet_v2'.
+    """
+    if data_node != 'data':
+        raise ValueError("Input data node name must be 'data'. This can be fixed.")
+    if num_input_channels != 3:
+        raise ValueError("Number of input channels must be 3. This can be fixed.")
+    # The no_bias parameter is ignored.
+    if no_loss != True:
+        raise ValueError("The 'no_loss' parameter must be False. This can be fixed.")
+    #
+    # The 'batch_size' must be there but it will not be used since resnet50_trainer
+    # has its own functions to feed data.
+    params = {
+        'input_shape': (num_input_channels, 299, 299),
+        'num_classes': num_labels,
+        'arg_scope': {'order': 'NCHW'},
+        'batch_size': 16,
+        'phase': 'training',
+        'run_with_resnet50_trainer': True
+    }
+    model_builder = InceptionResNetV2(params)
+    return model_builder.forward_pass_builder(model)
