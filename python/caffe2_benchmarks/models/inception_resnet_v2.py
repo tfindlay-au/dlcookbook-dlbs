@@ -205,8 +205,9 @@ class InceptionResNetV2(Model):
         #
         conv6 = self.conv_factory(model, block8, 2080, 1536, kernel=1, name='conv6')              #1536x8x8
         pool8 = brew.average_pool(model, conv6, 'pool8', kernel=8, global_pool=True)              #1536x1x1
-        drop8 = brew.dropout(model, pool8, 'dtop8', ratio=0.2,                                    #1536x1x1
-                             is_test=(self.phase == 'inference'))
+        #drop8 = brew.dropout(model, pool8, 'drop8', ratio=0.5,                                    #1536x1x1
+        #                     is_test=(self.phase == 'inference'), use_cudnn=False)
+        drop8 = pool8
 
         if not self.__run_with_resnet50_trainer:
             return self.add_head_nodes(model, drop8, 1536, 'classifier', loss_scale=loss_scale)
