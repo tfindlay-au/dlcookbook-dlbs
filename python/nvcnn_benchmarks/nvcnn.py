@@ -1697,8 +1697,10 @@ def main():
         speeds = total_batch_size / batch_times
         speed_mean = np.mean(speeds)
         if nstep > 2:
-            speed_uncertainty = np.std(speeds, ddof=1) / np.sqrt(float(nstep))
+            stdev = np.std(speeds, ddof=1)
+            speed_uncertainty = stdev / np.sqrt(float(nstep))
         else:
+            stdev = float('nan')
             speed_uncertainty = float('nan')
         speed_madstd = 1.4826*np.median(np.abs(speeds - np.median(speeds)))
         speed_jitter = speed_madstd
@@ -1708,6 +1710,9 @@ def main():
         print('-' * 64)
         # Sergey
         print("__results.throughput__=%s" % (json.dumps(speed_mean)))
+        print("__results.throughput_std__=%s" % (json.dumps(stdev)))
+        print("__results.throughput_stdm__=%s" % (json.dumps(speed_uncertainty)))
+        print("__results.throughput_jitter__=%s" % (json.dumps(speed_jitter)))
         print("__results.time__=%s" % (json.dumps(1000.0*total_batch_size/speed_mean)))
         print("__results.time_data__=%s" % (json.dumps((1000.0 * batch_times).tolist())))
     else:
