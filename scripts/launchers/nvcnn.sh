@@ -47,11 +47,11 @@ else
     :;
     # If everything's OK, we now can get IPS (throughput):
     # What needs be done: check for error
-    ips=$(grep "Images/sec:" ${exp_log_file}  | awk '{print $2}')
-    is_positive=$(echo "print($ips > 0)" | python)
-    if [ "$is_positive" == "True" ]; then
-      tm=$(echo "print (${exp_effective_batch} * 1000.0 / $ips)" | python)
-      echo -e "__results.time__= $tm" >> ${exp_log_file}
-      echo -e "__results.throughput__= $ips" >> ${exp_log_file}
-    fi
+    #ips=$(grep "Images/sec:" ${exp_log_file}  | awk '{print $2}')
+    #is_positive=$(echo "print($ips > 0)" | python)
+    #if [ "$is_positive" == "True" ]; then
+    #  tm=$(echo "print (${exp_effective_batch} * 1000.0 / $ips)" | python)
+    #  echo -e "__results.time__= $tm" >> ${exp_log_file}
+    #  echo -e "__results.throughput__= $ips" >> ${exp_log_file}
+    #fi
 fi

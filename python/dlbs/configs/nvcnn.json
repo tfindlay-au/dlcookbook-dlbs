@@ -46,18 +46,24 @@
       "type": "bool",
       "desc": "Enable/disable TensorFlow XLA optimizations."
     },
+    "nvcnn.use_distort_color": {
+      "val": false,
+      "type": "bool",
+      "desc": "Enable/disable distort colors."
+    },
     "nvcnn.args": {
       "val": [
         "--model=${exp.model}",
         "$('' if not '${nvcnn.data_dir}' else '--data_dir=${nvcnn.data_dir}' if ${exp.docker} is False else '--data_dir=/workspace/data')$",
         "--batch_size=${exp.replica_batch}",
-        "--num_warmup_batches=${exp.num_warmup_batches}",
+        "--nstep_burnin=${exp.num_warmup_batches}",
         "--num_batches=${exp.num_batches}",
-        "$('--use_nccl' if ${nvcnn.use_nccl} else '')$",
-        "$('--use_xla' if ${nvcnn.use_xla} else '')$",
+        "$('--nccl' if ${nvcnn.use_nccl} else '--nonccl')$",
+        "$('--xla' if ${nvcnn.use_xla} else '--noxla')$",
+        "$('--distort_color' if ${nvcnn.use_distort_color} else '--nodistort_color')$",
         "--num_gpus=$(${exp.num_local_gpus} if '${exp.device_type}' == 'gpu' else 1)$",
         "--display_every=${nvcnn.display_every}",
-        "--log_dir=${nvcnn.log_dir}",
+        "$('' if not '${nvcnn.log_dir}' else '--log_dir=${nvcnn.log_dir}' if ${exp.docker} is False else '--log_dir=/workspace/log')$",
         "$('--fp16' if '${exp.dtype}' == 'float16' else '')$"
       ],
       "type": "str",
@@ -76,6 +82,7 @@
         "--volume=${DLBS_ROOT}/python/nvcnn_benchmarks:/workspace/nvcnn_benchmarks",
         "$('--volume=${runtime.cuda_cache}:/workspace/cuda_cache' if '${runtime.cuda_cache}' else '')$",
         "$('--volume=${nvcnn.data_dir}:/workspace/data' if '${nvcnn.data_dir}' else '')$",
+        "$('--volume=${nvcnn.log_dir}:/workspace/log' if '${nvcnn.log_dir}' else '')$",
         "$('--volume=${monitor.pid_folder}:/workspace/tmp' if ${monitor.frequency} > 0 else '')$",
         "${exp.docker_args}",
         "${nvcnn.docker_image}"

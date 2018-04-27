@@ -13,9 +13,34 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # ==============================================================================
+from __future__ import print_function
+"""
+Differences from original nvcnn.py:
+  - The AlexNet implementation was renamed to 'alexnet_owt'
+  - Classical AlexNet model with LRN layers was added with 'alexnet' name.
+  - Added method that implements LRN.
+  - Additional logging lines were added specific to DLBS.
+  - Added functionality to print a model title (human readeable name).
+  - Added ResNet200 and ResNet269 models.
+  - Added fully connected models - AcousticModel and DeepMNIST neural nets. They
+    do not support real data, only dummy. The original acoustic model uses 540 input
+    features (MFCC coefficients). To make compatible with CNN inputs, it emulates those
+    inputs with 23x23 image that gets flatten right away.
+
+"""
 
 """
 Changelog:
+1.6
+  - Center crop evaluation images.
+  - Enable LARC learning rate control
+  - Correctly order global_step update in training graph.
+  - Set default learning rate policy to polynomial decay.
+  - Add cmd line options for checkpoint and summary intervals.
+  - Scale resnet learning rate by batch size.
+1.5
+  - Ignore (with warning) --fp16 flag for inference
+  - Use only single GPU for inference.
 1.4
   - Fixed minor bug in model name exception
   - Added fallback to support PNG images in input dataset
@@ -45,11 +70,9 @@ Changelog:
   - Remove reference to tf.python module
   - Tabs --> spaces
 """
-
-from __future__ import print_function
 from builtins import range
 
-__version__ = "1.4"
+__version__ = "1.6"
 
 import numpy as np
 import tensorflow as tf
@@ -66,8 +89,33 @@ import sys
 import os
 import time
 import math
+import json
 from collections import defaultdict
 import argparse
+
+model_titles = {
+    'deep_mnist': 'DeepMNIST',
+    'acoustic_model': 'AcousticModel',
+    'vgg11': 'VGG11',
+    'vgg13': 'VGG13',
+    'vgg16': 'VGG16',
+    'vgg19': 'VGG19',
+    'lenet': 'LeNet',
+    'googlenet': 'GoogleNet',
+    'overfeat': 'Overfeat',
+    'alexnet': 'AlexNet',
+    'alexnet_owt': 'AlexNetOWT',
+    'trivial': 'Trivial',
+    'inception3': 'InceptionV3',
+    'inception4': 'InceptionV4',
+    'resnet18': 'ResNet18',
+    'resnet34': 'ResNet34',
+    'resnet50': 'ResNet50',
+    'resnet101': 'ResNet101',
+    'resnet152': 'ResNet152',
+    'resnet200': 'ResNet200',
+    'resnet269': 'ResNet269'
+}
 
 def tensorflow_version_tuple():
     v = tf.__version__
@@ -369,7 +417,9 @@ def decode_png(imgdata, channels=3):
 
 def random_crop_and_resize_image(image, bbox, height, width):
     with tf.name_scope('random_crop_and_resize'):
-        if not FLAGS.eval:
+        if FLAGS.eval:
+            image = tf.image.central_crop(image, 224./256.)
+        else:
             bbox_begin, bbox_size, distorted_bbox = tf.image.sample_distorted_bounding_box(
                 tf.shape(image),
                 bounding_boxes=bbox,
@@ -497,15 +547,14 @@ def all_sync_params(tower_params, devices):
     if len(devices) == 1:
         return tf.no_op()
     sync_ops = []
-    if have_nccl and FLAGS.nccl:
+    # TODO(benbarsdell): Re-enable this once tf.contrib.nccl.broadcast is fixed
+    #                    See https://github.com/tensorflow/tensorflow/issues/15425#issuecomment-361835192
+    if False and have_nccl and FLAGS.nccl:
         for param_on_devices in zip(*tower_params):
             # Note: param_on_devices is [paramX_gpu0, paramX_gpu1, ...]
             param0 = param_on_devices[0]
-            send_op, received_tensors = nccl.broadcast(param0, devices[1:])
-            sync_ops.append(send_op)
-            for device, param, received in zip(devices[1:],
-                                               param_on_devices[1:],
-                                               received_tensors):
+            received = nccl.broadcast(param0)
+            for device, param in zip(devices[1:], param_on_devices[1:]):
                 with tf.device(device):
                     sync_op = param.assign(received)
                     sync_ops.append(sync_op)
@@ -638,7 +687,7 @@ class FeedForwardTrainer(object):
                                                scope=var_scope.name)
                     self.tower_params.append(params)
                     # Apply loss scaling to improve numerical stability
-                    if FLAGS.loss_scale != 1:
+                    if FLAGS.loss_scale != 1.:
                         scale = FLAGS.loss_scale
                         grads  = [grad*(1./scale)
                                   for grad in tf.gradients(loss*scale, params)]
@@ -685,18 +734,43 @@ class FeedForwardTrainer(object):
         for device_num, device in enumerate(devices):
             with tf.device(device):
                 gradvars = tower_gradvars[device_num]
+                #Apply LARC scaling
+                if FLAGS.larc_eta is not None:
+                    LARC_eta = float(FLAGS.larc_eta)
+                    LARC_epsilon = float(FLAGS.larc_epsilon)
+                    v_list = [tf.norm(tensor=v, ord=2) for _, v in gradvars]
+                    g_list = [tf.norm(tensor=g, ord=2) if g is not None else 0.0
+                              for g, _ in gradvars]
+                    v_norms = tf.stack(v_list)
+                    g_norms = tf.stack(g_list)
+                    zeds = tf.zeros_like(v_norms)
+                    cond = tf.logical_and(
+                        tf.not_equal(v_norms, zeds),
+                        tf.not_equal(g_norms, zeds))
+                    true_vals = tf.scalar_mul(LARC_eta, tf.div(v_norms, g_norms))
+                    false_vals = tf.fill(tf.shape(v_norms), LARC_epsilon)
+                    larc_local_lr = tf.where(cond, true_vals, false_vals)
+                    if FLAGS.larc_mode != "scale":
+                        ones = tf.ones_like(v_norms)
+                        lr = tf.fill(tf.shape(v_norms), self.learning_rate)
+                        larc_local_lr = tf.minimum(tf.div(larc_local_lr, lr), ones)
+
+                    gradvars = [(tf.multiply(larc_local_lr[i], g), v)
+                                if g is not None else (None, v) 
+                                for i, (g, v) in enumerate(gradvars) ]
+
                 opt = self.make_optimizer()
                 train_op = opt.apply_gradients(gradvars)
                 train_ops.append(train_op)
         # Combine all of the ops required for a training step
         update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS) or []
         with tf.device('/cpu:0'):
-            increment_global_step_op = tf.assign_add(self.global_step, 1)
-        update_ops.append(increment_global_step_op)
+            with tf.control_dependencies(train_ops):
+                increment_global_step_op = tf.assign_add(self.global_step, 1)
         self.enqueue_ops = []
         self.enqueue_ops.append(tf.group(*preload_ops))
         self.enqueue_ops.append(tf.group(*gpucopy_ops))
-        train_and_update_ops = tf.group(*(train_ops + update_ops))
+        train_and_update_ops = tf.group(*([increment_global_step_op] + update_ops))
         all_training_ops = (self.enqueue_ops + [train_and_update_ops])
         return total_loss_avg, self.learning_rate, all_training_ops
     def init(self, sess, devices):
@@ -756,6 +830,22 @@ def inference_trivial(net, input_layer):
     x = net.input_layer(input_layer)
     x = net.flatten(x)
     x = net.fully_connected(x, 1)
+    return x
+
+def inference_acoustic_model(net, input_layer):
+    net.use_batch_norm = False
+    x = net.input_layer(input_layer)
+    x = net.flatten(x)
+    for i in xrange(5):
+        x = net.fully_connected(x, 2048)
+    return x
+
+def inference_deep_mnist(net, input_layer):
+    net.use_batch_norm = False
+    x = net.input_layer(input_layer)
+    x = net.flatten(x)
+    for sz in (2500, 2000, 1500, 1500, 1000, 500):
+        x = net.fully_connected(x, sz)
     return x
 
 def inference_lenet5(net, input_layer):
@@ -1049,6 +1139,8 @@ def inference_resnet_v1(net, input_layer, nlayer):
     elif nlayer ==  50: return inference_resnet_v1_impl(net, input_layer, [3,4, 6,3])
     elif nlayer == 101: return inference_resnet_v1_impl(net, input_layer, [3,4,23,3])
     elif nlayer == 152: return inference_resnet_v1_impl(net, input_layer, [3,8,36,3])
+    elif nlayer == 200: return inference_resnet_v1_impl(net, input_layer, [3,24,36,3])
+    elif nlayer == 269: return inference_resnet_v1_impl(net, input_layer, [3,40,48,3])
     else: raise ValueError("Invalid nlayer (%i); must be one of: 18,34,50,101,152" %
                            nlayer)
         
@@ -1260,8 +1352,8 @@ def main():
     cmdline.add_argument('-m', '--model', required=True,
                          help="""Name of model to run:
                          trivial, lenet,
-                         alexnet, googlenet, vgg[11,13,16,19],
-                         inception[3,4], resnet[18,34,50,101,152],
+                         alexnet, alenet_owt, googlenet, vgg[11,13,16,19],
+                         inception[3,4], resnet[18,34,50,101,152,200,269],
                          resnext[50,101,152], inception-resnet2.""")
     cmdline.add_argument('--data_dir', default=None,
                          help="""Path to dataset in TFRecord format
@@ -1282,22 +1374,35 @@ def main():
     cmdline.add_argument('--display_every', default=1, type=int,
                          help="""How often (in iterations) to print out
                          running information.""")
+    cmdline.add_argument('--save_interval', default=43200, type=int,
+                         help="""Time in seconds between checkpoints.""")
+    cmdline.add_argument('--nstep_burnin', default=20, type=int,
+                         help="""Number of burn-in steps.""")
+    cmdline.add_argument('--summary_interval', default=3600, type=int,
+                         help="""Time in seconds between saves of summary
+                         statistics.""")
+    cmdline.add_argument('--loss_scale', default=1., type=float,
+                         help="""Loss scaling factor. Set to 1 to disable.""")
+    cmdline.add_argument('--larc_eta', default=None, type=float,
+                         help="""LARC eta value. If not specified, LARC is
+                         disabled.""")
+    cmdline.add_argument('--larc_mode', default='clip',
+                         help="""LARC mode can be 'clip' or 'scale'.""")
+    add_bool_argument(cmdline, '--nccl', default=True,
+                      help="""Use the NCCL library if available.
+                      Default True.""")
+    add_bool_argument(cmdline, '--xla', default=False,
+                      help="""Use XLA compilation.
+                      Default False.""")
+    add_bool_argument(cmdline, '--distort_color',
+                      help="""Image augmention by distorting colors.
+					  Default: False.""")
     add_bool_argument(cmdline, '--eval',
                       help="""Evaluate the top-1 and top-5 accuracy of
                       a checkpointed model.""")
     add_bool_argument(cmdline, '--fp16',
                       help="""Train using float16 (half) precision instead
                       of float32.""")
-    # Sergey - I am adding this to set from command line
-    cmdline.add_argument('--num_warmup_batches', default=10, type=int,
-                         help="""Number of warmup (burnin) batches to run.""")
-    add_bool_argument(cmdline, '--use_nccl',
-                      default=True,
-                      help="""Use NCCL library.""")
-    add_bool_argument(cmdline, '--use_xla',
-                      default=False,
-                      help="""Use TensorFlow XLA.""")
-    #
     global FLAGS
     FLAGS, unknown_args = cmdline.parse_known_args()
     if len(unknown_args) > 0:
@@ -1305,9 +1410,16 @@ def main():
             print("ERROR: Unknown command line arg: %s" % bad_arg)
         raise ValueError("Invalid command line arg(s)")
 
-    FLAGS.strong_scaling = False           # Do not change this (Sergey)!!!!
-    FLAGS.nccl           = FLAGS.use_nccl  # True
-    FLAGS.xla            = FLAGS.use_xla   # False
+    FLAGS.strong_scaling = False
+    #FLAGS.nccl           = True
+    #FLAGS.xla            = False
+    if FLAGS.eval:
+        if FLAGS.num_gpus != 1:
+            print("WARNING: eval always runs on a single GPU. Ignoring --num_gpus flag.")
+            FLAGS.num_gpus=1
+        if FLAGS.fp16:
+            print("WARNING: eval supports only fp32 math. Ignoring --fp16 flag.")
+            FLAGS.fp16 = False
 
     nclass = 1000
     total_batch_size = FLAGS.batch_size
@@ -1321,6 +1433,7 @@ def main():
     print("This script:", __file__, "v%s" % __version__)
     print("Cmd line args:")
     print('\n'.join(['  '+arg for arg in sys.argv[1:]]))
+    print("Burn-in steps: ", FLAGS.nstep_burnin);
 
     if FLAGS.data_dir is not None and FLAGS.data_dir != '':
         nrecord = get_num_records(os.path.join(FLAGS.data_dir, '%s-*' % subset))
@@ -1330,19 +1443,16 @@ def main():
     # Training hyperparameters
     FLAGS.learning_rate         = 0.001 # Model-specific values are set below
     FLAGS.momentum              = 0.9
-    FLAGS.lr_decay_policy       = 'step'
+    FLAGS.lr_decay_policy       = 'poly'
     FLAGS.lr_decay_epochs       = 30
     FLAGS.lr_decay_rate         = 0.1
     FLAGS.lr_poly_power         = 2.
     FLAGS.weight_decay          = 1e-4
     FLAGS.input_buffer_size     = min(10000, nrecord)
-    FLAGS.distort_color         = False
-    FLAGS.nstep_burnin          = FLAGS.num_warmup_batches # 20
-    FLAGS.summary_interval_secs = 600
-    FLAGS.save_interval_secs    = 600
+    #FLAGS.distort_color         = False
+    #FLAGS.nstep_burnin          = 20
     # Scaling to avoid fp16 underflow
-    #*FLAGS.loss_scale            = (1 << 7) if FLAGS.fp16 else 1
-    FLAGS.loss_scale            = 1 # TODO: May need to decide this based on model
+    FLAGS.larc_epsilon          = 1.
 
     model_dtype = tf.float16 if FLAGS.fp16 else tf.float32
 
@@ -1356,6 +1466,7 @@ def main():
     print("Have NCCL:  ", have_nccl)
     print("Using NCCL: ", FLAGS.nccl)
     print("Using XLA:  ", FLAGS.xla)
+    print("Distort color:  ", FLAGS.distort_color)
 
     if FLAGS.num_epochs is not None:
         if FLAGS.data_dir is None:
@@ -1366,6 +1477,8 @@ def main():
         FLAGS.num_epochs = max(nstep * total_batch_size // nrecord, 1)
 
     model_name = FLAGS.model
+    if model_name in model_titles:
+        print("__exp.model_title__=\"%s\"" % (model_titles[model_name]))
     if   model_name == 'trivial':
         height, width = 224, 224
         model_func = inference_trivial
@@ -1400,7 +1513,7 @@ def main():
         height, width = 224, 224
         nlayer = int(model_name[len('resnet'):])
         model_func = lambda net, images: inference_resnet_v1(net, images, nlayer)
-        FLAGS.learning_rate = 0.1 if nlayer > 18 else 0.5
+        FLAGS.learning_rate = 1.0 * total_batch_size / 1024.0
     elif model_name.startswith('resnext'):
         height, width = 224, 224
         nlayer = int(model_name[len('resnext'):])
@@ -1414,6 +1527,16 @@ def main():
         height, width = 299, 299
         model_func = inference_inception_resnet_v2
         FLAGS.learning_rate = 0.045
+    elif model_name == 'acoustic_model':
+        # 23 * 23 = 529 input features what is pretty close to actual 540 coefficients.
+        height, width = 23, 23
+        # Clustered tri-phones classes for English Fully Connected Acoustic Model
+        nclass = 8192
+        model_func = inference_acoustic_model
+    elif model_name == 'deep_mnist':
+        height, width = 28, 28
+        nclass = 10
+        model_func = inference_deep_mnist
     else:
         raise ValueError("Invalid model type: %s" % model_name)
 
@@ -1532,10 +1655,10 @@ def main():
         try:
             start_time = time.time()
             if (summary_ops is not None and
-                (step == 0 or
-                 time.time() - last_summary_time > FLAGS.summary_interval_secs)):
+                (step == 0 or step+1 == nstep or
+                 time.time() - last_summary_time > FLAGS.summary_interval)):
                 if step != 0:
-                    last_summary_time += FLAGS.summary_interval_secs
+                    last_summary_time += FLAGS.summary_interval
                 print("Writing summaries to ", log_dir)
                 summary, loss, lr = sess.run([summary_ops] + ops_to_run)[:3]
                 train_writer.add_summary(summary, step)
@@ -1552,8 +1675,8 @@ def main():
             oom = True
 
         if (saver is not None and
-            time.time() - last_save_time > FLAGS.save_interval_secs):
-            last_save_time += FLAGS.save_interval_secs
+            (time.time() - last_save_time > FLAGS.save_interval or step+1 == nstep)):
+            last_save_time += FLAGS.save_interval
             save_path = saver.save(sess, checkpoint_file,
                                    global_step=trainer.global_step)
             print("Checkpoint written to", save_path)
@@ -1583,6 +1706,10 @@ def main():
         print('Images/sec: %.1f +/- %.1f (jitter = %.1f)' % (
             speed_mean, speed_uncertainty, speed_jitter))
         print('-' * 64)
+        # Sergey
+        print("__results.throughput__=%s" % (json.dumps(speed_mean)))
+        print("__results.time__=%s" % (json.dumps(1000.0*total_batch_size/speed_mean)))
+        print("__results.time_data__=%s" % (json.dumps((1000.0 * batch_times).tolist())))
     else:
         print("No results, did not get past burn-in phase (%i steps)" %
               FLAGS.nstep_burnin)
