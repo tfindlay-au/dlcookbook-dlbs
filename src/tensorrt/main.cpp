@@ -172,6 +172,11 @@ public:
     stream << "], nbBindings=" << nbBindings << ")";
     log(stream.str());
     //
+    if (num_batches_ <= 0) {
+      std::cout << "***ERROR***: Suspicious number of batches (0) in calibrator::getBatch()." << std::endl;
+      exit(1);
+    }
+    //
     if (next_batch_ >= num_batches_) { return false; }
     //
     fill_random(batch_);
@@ -239,6 +244,11 @@ public:
     stream << "[calibrator] Calibrator::allocCalibrationMemory(input_size=" << input_size << ", num_batches=" << num_batches << ")";
     log(stream.str());
     
+    if (batch_size_ <= 0) {
+      std::cout << "***ERROR***: Batch size needs to be set first. Use 'calibrator::setBatchSize()'" << std::endl;
+      exit(1);
+    }
+    
     input_size_ = input_size;
     num_batches_ = num_batches;
     next_batch_ = 0;
@@ -278,7 +288,7 @@ int get_binding_size(ICudaEngine* engine, const int idx);
 void report_bindings(ICudaEngine* engine);
 
 // Compute and print results. At the exit, vec will be sorted.
-void report_results(std::vector<float>& vec, const std::string& name_prefix);
+void report_results(std::vector<float>& vec, const std::string& name_prefix, const int batch_size);
 
 /**
  * exec <config> <model> <batch-size> <num-iters> [input_name] [output_name] [data_type]
@@ -335,13 +345,13 @@ int main(int argc, char **argv) {
 
   g_logger.log_info("[main] Creating inference builder");
   IBuilder* builder = createInferBuilder(g_logger);
-    
+
   // Parse the caffe model to populate the network, then set the outputs.
   // For INT8 inference, the input model must be specified with 32-bit weights.
   g_logger.log_info("[main] Creating network and Caffe parser (model: " + model + ")");
   INetworkDefinition* network = builder->createNetwork();
   ICaffeParser* caffe_parser = createCaffeParser();
-  auto blob_name_to_tensor = caffe_parser->parse(
+  const IBlobNameToTensor* blob_name_to_tensor = caffe_parser->parse(
     model.c_str(), // *.prototxt caffe model definition
     nullptr,       // if null, random weights?
     *network, 
@@ -361,6 +371,16 @@ int main(int argc, char **argv) {
   } else if (data_type == DataType::kINT8) {
     g_logger.log_info("Enabling INT8 mode");
     g_calibrator.setBatchSize(batch_size);
+
+    // Allocate memory but before figure out size of input tensor.
+    const nvinfer1::ITensor* input_tensor = blob_name_to_tensor->find(input_name.c_str());
+    const Dims3 input_dims = input_tensor->getDimensions();
+    const auto input_sz = input_dims.c * input_dims.h * input_dims.w;
+    g_calibrator.allocCalibrationMemory(
+      batch_size * input_dims.c * input_dims.h * input_dims.w,
+      10
+    );
+
     builder->setInt8Mode(true);
     builder->setInt8Calibrator(&g_calibrator);
   } else {
@@ -432,8 +452,8 @@ int main(int argc, char **argv) {
     g_profiler.printLayerTimes(num_batches);
   }
   g_logger.log_info("[main] Reporting results");
-  report_results(total, "total_");           // Total, true, time including data transfers.
-  report_results(inference, "");             // Pure inference time.
+  report_results(total, "total_", batch_size);           // Total, true, time including data transfers.
+  report_results(inference, "", batch_size);             // Pure inference time.
   
   g_logger.log_info("[main] Cleaning buffers");
   if (data_type == DataType::kINT8) {
@@ -473,14 +493,16 @@ void report_bindings(ICudaEngine* engine) {
   }
 }
 
-void report_results(std::vector<float>& v, const std::string& name_prefix) {
+void report_results(std::vector<float>& v, const std::string& name_prefix, const int batch_size) {
   std::sort(v.begin(), v.end());
   const float sum = std::accumulate(v.begin(), v.end(), 0.0f);
   const float mean = sum / v.size();
   const float sq_sum = std::inner_product(v.begin(), v.end(), v.begin(), 0.0f);
   const float stdev = std::sqrt(sq_sum / v.size() - mean * mean);
+  const float throughput = 1000.0 * batch_size / mean;
   
   std::cout << "__results." << name_prefix << "time__= " << mean  << std::endl;
+  std::cout << "__results." << name_prefix << "throughput__= " << throughput  << std::endl;
   std::cout << "__results." << name_prefix << "time_data__=[";
   for (int i=0; i<v.size(); ++i) {
     if (i != 0) { std::cout << ","; }

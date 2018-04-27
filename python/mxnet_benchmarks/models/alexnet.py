@@ -35,18 +35,21 @@ class AlexNet(Model):
              'dtype': 'float32'}
         )
         Model.__init__(self, params)
-        training = self.phase == 'training'
+        if self.dtype == 'float16':
+            print("[WARNING] MxNet does not provide half precision kernel for LRN layer. It will be disabled. "\
+                  "Thus, comparison with single precision version or other frameworks will not be totally fair.")
 
+        training = self.phase == 'training'
         data = self.add_data_node()
 
         conv1 = mx.symbol.Convolution(name='conv1', data=data, kernel=(11, 11), stride=(4, 4), num_filter=96)
         relu1 = mx.symbol.Activation(name='relu1', data=conv1, act_type='relu')
-        norm1 = mx.symbol.LRN(name='norm1', data=relu1, alpha=0.0001, beta=0.75, knorm=2, nsize=5)
+        norm1 = self.maybe_lrn(relu1, 'norm1')
         pool1 = mx.symbol.Pooling(name='pool1', data=norm1, pool_type="max", kernel=(3, 3), stride=(2, 2))
 
         conv2 = mx.symbol.Convolution(name='conv2', data=pool1, kernel=(5, 5), pad=(2, 2), num_filter=256, num_group=1)
         relu2 = mx.symbol.Activation(name='relu2', data=conv2, act_type="relu")
-        norm2 = mx.symbol.LRN(name='norm2', data=relu2, alpha=0.0001, beta=0.75, knorm=2, nsize=5)
+        norm2 = self.maybe_lrn(relu2, 'norm2')
         pool2 = mx.symbol.Pooling(name='pool2', data=norm2, kernel=(3, 3), stride=(2, 2), pool_type="max")
 
         conv3 = mx.symbol.Convolution(name='conv3', data=pool2, kernel=(3, 3), pad=(1, 1), num_filter=384)

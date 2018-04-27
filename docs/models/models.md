@@ -46,10 +46,30 @@ on it now. The source code for the models contains references of the original im
     <th>model</th><th>Name</th><th>Input shape (CHW)</th><th>#Parameters</th><th>#Model size (Mb)</th><th>TensorFlow</th><th>Caffe</th><th>TensorRT</th><th>Caffe2</th><th>MXNet</th><th>PyTorch</th>
   </tr>
   <tr>
+    <td>acoustic_model</td><td>[AcousticModel](http://ethereon.github.io/netscope/#/gist/10f5dee56b6f7bbb5da26749bd37ae16)</td>
+    <td>540x1x1</td>
+    <td>34,678,784</td><td>133</td>
+    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/models/acoustic_model.py)</td>
+    <td colspan="2">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/tree/master/models/acoustic_model)</td>
+    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/caffe2_benchmarks/models/acoustic_model.py)</td>
+    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/mxnet_benchmarks/models/acoustic_model.py)</td>
+    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/pytorch_benchmarks/models/acoustic_model.py)</td>
+  </tr>
+  <tr>
     <td>alexnet</td><td>[AlexNet](http://ethereon.github.io/netscope/#/gist/5c94a074f4e4ac4b81ee28a796e04b5d)</td>
     <td>3x227x227</td>
     <td>62,378,344</td><td>238</td>
-    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/alexnet_model.py)</td>
+    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/models/alexnet_model.py)</td>
+    <td colspan="2">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/tree/master/models/alexnet_owt)</td>
+    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/caffe2_benchmarks/models/alexnet_owt.py)</td>
+    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/mxnet_benchmarks/models/alexnet_owt.py)</td>
+    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/pytorch_benchmarks/models/alexnet_owt.py)</td>
+  </tr>
+  <tr>
+    <td>alexnet_owt</td><td>[AlexNetOWT](http://ethereon.github.io/netscope/#/gist/dc85cc15d59d720c8a18c4776abc9fd5)</td>
+    <td>3x227x227</td>
+    <td>61,100,840</td><td>233</td>
+    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/models/alexnet_model.py)</td>
     <td colspan="2">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/tree/master/models/bvlc_alexnet)</td>
     <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/caffe2_benchmarks/models/alexnet.py)</td>
     <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/mxnet_benchmarks/models/alexnet.py)</td>
@@ -59,27 +79,17 @@ on it now. The source code for the models contains references of the original im
     <td>deep_mnist</td><td>[DeepMNIST](http://ethereon.github.io/netscope/#/gist/9c75cd95891207082bd42264eb7a2706)</td>
     <td>1x28x28</td>
     <td>11,972,510</td><td>46</td>
-    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/deepmnist_model.py)</td>
+    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/models/deepmnist_model.py)</td>
     <td colspan="2">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/tree/master/models/deep_mnist)</td>
     <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/caffe2_benchmarks/models/deep_mnist.py)</td>
     <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/mxnet_benchmarks/models/deep_mnist.py)</td>
     <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/pytorch_benchmarks/models/deep_mnist.py)</td>
   </tr>
   <tr>
-    <td>eng_acoustic_model</td><td>[EngAcousticModel](http://ethereon.github.io/netscope/#/gist/10f5dee56b6f7bbb5da26749bd37ae16)</td>
-    <td>540x1x1</td>
-    <td>34,678,784</td><td>133</td>
-    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/engacoustic_model.py)</td>
-    <td colspan="2">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/tree/master/models/eng_acoustic_model)</td>
-    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/caffe2_benchmarks/models/eng_acoustic_model.py)</td>
-    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/mxnet_benchmarks/models/eng_acoustic_model.py)</td>
-    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/pytorch_benchmarks/models/eng_acoustic_model.py)</td>
-  </tr>
-  <tr>
     <td>googlenet</td><td>[GoogleNet](http://ethereon.github.io/netscope/#/gist/4325909f3683e51eaf93fdaeed6b2a9b)</td>
     <td>3x224x224</td>
     <td>6,998,552</td><td>27</td>
-    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/googlenet_model.py)</td>
+    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/models/googlenet_model.py)</td>
     <td colspan="2">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/tree/master/models/bvlc_googlenet)</td>
     <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/caffe2_benchmarks/models/googlenet.py)</td>
     <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/mxnet_benchmarks/models/googlenet.py)</td>
@@ -89,7 +99,7 @@ on it now. The source code for the models contains references of the original im
     <td>inception3</td><td>[Inception3](http://ethereon.github.io/netscope/#/gist/04a797f778a7d513a9b52af4c1dbee4e)</td>
     <td rowspan=2>3x299x299</td>
     <td>23,869,094</td><td>91</td>
-    <td rowspan="2">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/inception_model.py)</td>
+    <td rowspan="2">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/models/inception_model.py)</td>
     <td colspan=2>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/tree/master/models/inception3)</td>
     <td rowspan=2>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/caffe2_benchmarks/models/inception.py)</td>
     <td rowspan=2>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/mxnet_benchmarks/models/inception.py)</td>
@@ -104,7 +114,7 @@ on it now. The source code for the models contains references of the original im
     <td>overfeat</td><td>[Overfeat](http://ethereon.github.io/netscope/#/gist/ebfeff824393bcd66a9ceb851d8e5bde)</td>
     <td>3x231x231</td>
     <td>145,920,872</td><td>557</td>
-    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/overfeat_model.py)</td>
+    <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/models/overfeat_model.py)</td>
     <td colspan=2>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/tree/master/models/overfeat)</td>
     <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/caffe2_benchmarks/models/overfeat.py)</td>
     <td>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/mxnet_benchmarks/models/overfeat.py)</td>
@@ -114,7 +124,7 @@ on it now. The source code for the models contains references of the original im
     <td>resnet18</td><td>[ResNet18](http://ethereon.github.io/netscope/#/gist/649e0fb6c96c60c9f0abaa339da3cd27)</td>
     <td rowspan=7>3x224x224</td>
     <td>11,703,485</td><td>45</td>
-    <td rowspan="7" framework="tensorflow">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/resnet_model.py)</td>
+    <td rowspan="7" framework="tensorflow">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/models/resnet_model.py)</td>
     <td colspan=2>[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/tree/master/models/resnet18)</td>
     <td rowspan="7" framework="caffe2">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/caffe2_benchmarks/models/resnet.py)</td>
     <td rowspan="7" framework="mxnet">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/mxnet_benchmarks/models/resnet.py)</td>
@@ -154,7 +164,7 @@ on it now. The source code for the models contains references of the original im
     <td>vgg11</td><td>[VGG11](http://ethereon.github.io/netscope/#/gist/5550b93fb51ab63d520af5be555d691f)</td>
     <td rowspan=4>3x224x224</td>
     <td>132,863,336</td><td>507</td>
-    <td rowspan="4">[Impl](https://github.hpe.com/labs/dlcookbook/blob/master/python/tf_cnn_benchmarks/vgg_model.py)</td>
+    <td rowspan="4">[Impl](https://github.hpe.com/labs/dlcookbook/blob/master/python/tf_cnn_benchmarks/models/vgg_model.py)</td>
     <td colspan="2">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/tree/master/models/vgg11)</td>
     <td rowspan="4">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/caffe2_benchmarks/models/vgg.py)</td>
     <td rowspan="4">[Impl](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/mxnet_benchmarks/models/vgg.py)</td>
@@ -181,7 +191,7 @@ The experimenter script accepts ``--model`` command line argument that specifies
 
 1. __AlexNet__ Same as [BVLC Caffe's version](https://github.com/BVLC/caffe/tree/master/models/bvlc_alexnet) _without_ grouped convolutions in layers 2, 4 and 5 (`group=1`). This does not significantly change number of  trainable parameters but does change computational profile - roughly from 0.7 gFLOP to 1.14 gFLOP for forward pass.
 2. __DeepMNIST__ A fully-connected architecture mentioned [here](http://yann.lecun.com/exdb/mnist/) described in this [paper](http://arxiv.org/abs/1003.0358).
-3. __EngAcousticModel__ A fully-connected architecture that's typically used in hybrid HMM-DNN speech recognition systems (English language) for acoustic modeling. Similar to a speech network described in Large Scale Distributed Deep Networks [paper](https://research.google.com/archive/large_deep_networks_nips2012.html).
+3. __AcousticModel__ A fully-connected architecture that's typically used in hybrid HMM-DNN speech recognition systems (English language) for acoustic modeling. Similar to a speech network described in Large Scale Distributed Deep Networks [paper](https://research.google.com/archive/large_deep_networks_nips2012.html).
 4. __GoogleNet__ Same as version implemented in BVLC Caffe [here](https://github.com/BVLC/caffe/tree/master/models/bvlc_googlenet). Reference publication is [here](http://arxiv.org/abs/1409.4842).
 5. __Inception3__ and __Inception4__ are based on original implementation in [tf_cnn_benchmarks](https://github.com/HewlettPackard/dlcookbook-dlbs/blob/master/python/tf_cnn_benchmarks/inception_model.py). Inception3 model publication is [here](http://arxiv.org/abs/1512.00567). Inception4 publication is [here](http://arxiv.org/abs/1602.07261).
 6. __Overfeat__ A model described in this [paper](https://arxiv.org/pdf/1312.6229.pdf). Based on Google's tf_cnn_benchmarks with additional dropout operators applied to 6th and 7th layers as described in the paper.
