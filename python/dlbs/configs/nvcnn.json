@@ -81,7 +81,7 @@
         "--pid=host",
         "--volume=${DLBS_ROOT}/python/nvcnn_benchmarks:/workspace/nvcnn_benchmarks",
         "$('--volume=${runtime.cuda_cache}:/workspace/cuda_cache' if '${runtime.cuda_cache}' else '')$",
-        "$('--volume=${nvcnn.data_dir}:/workspace/data' if '${nvcnn.data_dir}' else '')$",
+        "$('--volume=${exp.data_dir}:/workspace/data' if '${exp.data_dir}' else '')$",
         "$('--volume=${nvcnn.log_dir}:/workspace/log' if '${nvcnn.log_dir}' else '')$",
         "$('--volume=${monitor.pid_folder}:/workspace/tmp' if ${monitor.frequency} > 0 else '')$",
         "${exp.docker_args}",
