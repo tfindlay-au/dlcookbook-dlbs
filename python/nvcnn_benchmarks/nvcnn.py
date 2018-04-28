@@ -1345,6 +1345,7 @@ def add_bool_argument(cmdline, shortname, longname=None, default=False, help=Non
     return cmdline
 
 def main():
+    block_start_time = time.time()
     tf.set_random_seed(1234)
     np.random.seed(4321)
     cmdline = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -1650,7 +1651,11 @@ def main():
     batch_times = []
     oom = False
     step0 = int(sess.run(trainer.global_step))
+    print("__profiler.init_time__=%s" % json.dumps(time.time() - block_start_time))
+    block_start_time = time.time()
     for step in range(step0, nstep):
+        if step == FLAGS.nstep_burnin:
+            print("__profiler.warmup_time__=%s" % json.dumps(time.time() - block_start_time))
         ops_to_run = [total_loss, learning_rate] + train_ops
         try:
             start_time = time.time()
