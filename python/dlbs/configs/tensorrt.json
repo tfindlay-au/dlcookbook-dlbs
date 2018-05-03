@@ -24,6 +24,19 @@
         "and provide same cache path."
       ]
     },
+    "tensorrt.report_frequency": {
+      "val": -1,
+      "type": "int",
+      "desc": [
+        "Report progress every N-th processed batch. Default value (-1) means do not report progress,",
+        "report only final overall statistics"
+      ]
+    },
+    "tensorrt.no_batch_times": {
+      "val": false,
+      "type": "bool",
+      "desc": "If set, DLBS won't log individual batch times."
+    },
     "tensorrt.args": {
       "val": [
         "--model ${exp.model}",
@@ -35,7 +48,9 @@
         "$('--profile' if ${tensorrt.profile} is True else '')$",
         "--input ${tensorrt.input}",
         "--output ${tensorrt.output}",
-        "--cache $('' if '${tensorrt.cache}' == '' else '${tensorrt.cache}' if ${exp.docker} is False else '/workspace/tensorrt_cache')$"
+        "--cache $('' if '${tensorrt.cache}' == '' else '${tensorrt.cache}' if ${exp.docker} is False else '/workspace/tensorrt_cache')$",
+        "--report_frequency=${tensorrt.report_frequency}",
+        "$('--no_batch_times' if ${tensorrt.no_batch_times} else '')$"
       ],
       "type": "str",
       "desc": "Command line arguments that launcher uses to launch TensorRT."
