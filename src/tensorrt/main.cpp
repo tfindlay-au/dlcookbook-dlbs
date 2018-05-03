@@ -215,7 +215,7 @@ int main(int argc, char **argv) {
     cudaCheck(cudaMemcpy(output.data(), buffers[output_index], num_output_bytes, cudaMemcpyDeviceToHost));
     tm_tracker.batch_done();
     //
-    if (report_frequency > 0 && i%report_frequency == 0) {
+    if (report_frequency > 0 && i>0 && i%report_frequency == 0) {
       logger.log_progress(tm_tracker.get_batch_times(), tm_tracker.get_iter_idx(), batch_size, "batch_");
       tm_tracker.new_iteration();
       logger.log_progress(tm_tracker.get_infer_times(), tm_tracker.get_iter_idx(), batch_size, "");
