@@ -6,7 +6,10 @@
       "desc": "Path to script that launches TensorRT benchmarks."
     },
     "tensorrt.env": {
-      "val": "${runtime.EXPORT_CUDA_CACHE_PATH}",
+      "val": [
+        "${runtime.EXPORT_CUDA_CACHE_PATH}",
+        "${runtime.EXPORT_CUDA_VISIBLE_DEVICES}"
+      ],
       "type": "str",
       "desc": "Environmental variables to set for TensorRT benchmarks."
     },
@@ -91,15 +94,15 @@
       "val": "",
       "type": "str",
       "desc": "Basically, it's a LD_LIBRARY_PATH for TensorRT in case of a bare metal run (should be empty)."
+    },
+    "tensorrt.data_dir": {
+      "val": "",
+      "type": "str",
+      "desc": [
+        "*** This parameter is not used since TensorRT backend does not support real data. ***",
+        "*** It is here for compatibility reasons with exp.data_dir ***"
+      ]
     }
-  },
-  "tensorrt.data_dir": {
-    "val": "",
-    "type": "str",
-    "desc": [
-      "*** This parameter is not used since TensorRT backend does not support real data. ***",
-      "*** It is here for compatibility reasons with exp.data_dir ***"
-    ]
   },
   "extensions": [
     {
@@ -114,7 +117,8 @@
       "parameters": { "tensorrt.env": [
         "PATH=$('${tensorrt.host_path}:\\$PATH'.strip(' \t:'))$",
         "LD_LIBRARY_PATH=$('${tensorrt.host_libpath}:\\$LD_LIBRARY_PATH'.strip(' \t:'))$",
-        "${runtime.EXPORT_CUDA_CACHE_PATH}"
+        "${runtime.EXPORT_CUDA_CACHE_PATH}",
+        "${runtime.EXPORT_CUDA_VISIBLE_DEVICES}"
       ]}
     }
   ]

@@ -6,6 +6,15 @@ ENV TENSORRT_PACKAGE=$version
 
 COPY $version /
 
+# Should be a temporary solution. Something does not work when these repo are enabled (as of 3rd April 2018)
+RUN cp /etc/apt/sources.list.d/cuda.list /etc/apt/sources.list.d/cuda.list.bak && \
+    cp /etc/apt/sources.list.d/nvidia-ml.list /etc/apt/sources.list.d/nvidia-ml.list.bak && \
+    printf '#%s' "$(cat /etc/apt/sources.list.d/cuda.list)" >/etc/apt/sources.list.d/cuda.list && \
+    printf '#%s' "$(cat /etc/apt/sources.list.d/nvidia-ml.list)" >/etc/apt/sources.list.d/nvidia-ml.list
+#    apt-get update && apt-get install -y --no-install-recommends apt-transport-https && \
+#    mv /etc/apt/sources.list.d/cuda.list.bak /etc/apt/sources.list.d/cuda.list && \
+#    mv /etc/apt/sources.list.d/nvidia-ml.list.bak /etc/apt/sources.list.d/nvidia-ml.list 
+
 RUN dpkg -i /${TENSORRT_PACKAGE} && \
     rm /${TENSORRT_PACKAGE} && \
     apt-get update && apt-get install -y --no-install-recommends \
