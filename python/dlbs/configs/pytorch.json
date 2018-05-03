@@ -62,6 +62,11 @@
       "type": "int",
       "desc": "Number of worker threads to be used by data loader (for synthetic and real datasets)."
     },
+    "pytorch.data_loader_only": {
+      "val": false,
+      "type": "bool",
+      "desc": "If true, benchmark only data ingestion part of the workload (data loader)."
+    },
     "pytorch.args": {
       "val": [
         "--model=${exp.model}",
@@ -71,13 +76,14 @@
         "--num_warmup_batches=${exp.num_warmup_batches}",
         "--num_gpus=${exp.num_local_gpus}",
         "--device=${exp.device_type}",
-        "$('' if not '${pytorch.data_dir}' else '--data_dir=${pytorch.data_dir}' if ${exp.docker} is False else '--data_dir=/workspace/data')$",
+        "$('' if not '${exp.data_dir}' else '--data_dir=${exp.data_dir}' if ${exp.docker} is False else '--data_dir=/workspace/data')$",
         "--data_backend=${pytorch.data_backend}",
         "--data_shuffle=$('true' if ${pytorch.data_shuffle} else 'false')$",
         "--num_loader_threads=${pytorch.num_loader_threads}",
         "--dtype=${exp.dtype}",
         "--cudnn_benchmark=$('true' if ${pytorch.cudnn_benchmark} else 'false')$",
-        "--cudnn_fastest=$('true' if ${pytorch.cudnn_fastest} else 'false')$"
+        "--cudnn_fastest=$('true' if ${pytorch.cudnn_fastest} else 'false')$",
+        "--data_loader_only=$('true' if ${pytorch.data_loader_only} is True else 'false')$"
       ],
       "type": "str",
       "desc": "Command line arguments that launcher will pass to a pytorch_benchmarks script."
@@ -95,7 +101,7 @@
         "--ipc=host",
         "--volume=${DLBS_ROOT}/python/pytorch_benchmarks:/workspace/pytorch_benchmarks",
         "$('--volume=${runtime.cuda_cache}:/workspace/cuda_cache' if '${runtime.cuda_cache}' else '')$",
-        "$('--volume=${pytorch.data_dir}:/workspace/data' if '${pytorch.data_dir}' else '')$",
+        "$('--volume=${exp.data_dir}:/workspace/data' if '${exp.data_dir}' else '')$",
         "$('--volume=${monitor.pid_folder}:/workspace/tmp' if ${monitor.frequency} > 0 else '')$",
         "${exp.docker_args}",
         "${exp.docker_image}"

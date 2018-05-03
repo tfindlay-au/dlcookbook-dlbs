@@ -12,29 +12,30 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 from __future__ import absolute_import
-import torch.nn as nn
-from pytorch_benchmarks.models.model import Model
+import mxnet as mx
+from mxnet_benchmarks.models.model import Model
 
-class EngAcousticModel(Model):
-
-    implements = 'eng_acoustic_model'
+class AcousticModel(Model):
+    
+    implements = 'acoustic_model'
+    
+    @property
+    def output(self):
+        return self.__output
 
     def __init__(self, params):
         Model.check_parameters(
             params,
-            {'name': 'EngAcousticModel', 'input_shape':(540),
+            {'name': 'AcousticModel', 'input_shape':(540),
              'num_classes': 8192, 'phase': 'training',
              'dtype': 'float32'}
         )
         Model.__init__(self, params)
-        self.model = nn.Sequential()
 
-        prev_size = self.input_shape[0]
-        for idx in range(5):
-            self.model.add_module('linear_%d' % idx, nn.Linear(prev_size, 2048))
-            self.model.add_module('relu_%d' % idx, nn.ReLU(inplace=True))
-            prev_size = 2048
-        self.model.add_module('classifier', nn.Linear(prev_size, self.num_classes))
+        v = self.add_data_node()
 
-    def forward(self, x):
-        return self.model(x)
+        for _ in range(5):
+            v = mx.sym.FullyConnected(data=v, num_hidden=2048)
+            v = mx.symbol.Activation(data=v, act_type="relu")
+
+        self.__output = self.add_head_nodes(v)
