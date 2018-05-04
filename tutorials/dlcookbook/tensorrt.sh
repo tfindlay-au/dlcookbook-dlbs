@@ -17,7 +17,7 @@ loglevel=warning
 # If you run multiple experiments, you really want to make sure that experiment
 # log file is different for every experiment.
 # This example runs in a container.
-if true; then
+if false; then
     rm -rf ./$framework
     python $script $action --log-level=$loglevel\
                            -Pexp.framework='"tensorrt"'\
@@ -27,7 +27,7 @@ if true; then
                            -Vexp.model='["resnet18"]'\
                            -Pexp.log_file='"${BENCH_ROOT}/tensorrt/${exp.model}.log"'
     params="exp.status,exp.framework_title,exp.effective_batch,results.time,results.throughput,exp.model_title"
-    python $parser ./$framework/*.log --output-params ${params}
+    python $parser ./$framework/*.log --output_params ${params}
 fi
 #------------------------------------------------------------------------------#
 # Example: same experiment as above but runs in a host OS. I must run this as a root
@@ -41,7 +41,7 @@ if false; then
                            -Vexp.model='["resnet18"]'\
                            -Pexp.log_file='"${BENCH_ROOT}/tensorrt/${exp.model}.log"'
     params="exp.status,exp.framework_title,exp.effective_batch,results.time,results.throughput,exp.model_title"
-    python $parser ./$framework/*.log --output-params ${params}
+    python $parser ./$framework/*.log --output_params ${params}
 fi
 #------------------------------------------------------------------------------#
 # Example: this one runs TensorRT with several models and several batch sizes
@@ -58,5 +58,28 @@ if false; then
                    -Pexp.num_warmup_batches=1\
                    -Pexp.num_batches=1
     params="exp.framework_title,exp.effective_batch,results.time,results.total_time,exp.model_title"
-    python $parser ./$framework/*.log --output-params ${params}
+    python $parser ./$framework/*.log --output_params ${params}
+fi
+#------------------------------------------------------------------------------#
+# Inference with multiple GPUs
+if true; then
+    gpus="0,1,2,3";
+    model="resnet50"
+
+    rm -rf ./$framework
+
+    gpus=(${gpus//,/ });
+    for gpu in "${gpus[@]}"
+    do
+        python $script $action --log-level=$loglevel\
+                               -Pexp.gpus=\"$gpu\"\
+                               -Pexp.model=\"$model\"\
+                               -Pexp.framework='"tensorrt"'\
+                               -Pexp.docker=true\
+                               -Pexp.phase='"inference"'\
+                               -Pexp.log_file='"${BENCH_ROOT}/tensorrt/${exp.model}_${exp.gpus}.log"' &
+    done
+    wait
+    #python $parser ./$framework/*.log --output_params ${params}
+    #params="exp.status,exp.framework_title,exp.effective_batch,results.time,results.throughput,exp.model_title"
 fi

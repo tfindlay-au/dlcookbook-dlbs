@@ -51,7 +51,7 @@
       "desc": "Directory where Caffe's model file is located. Different for host/docker benchmarks."
     },
     "tensorrt.docker_image": {
-      "val": "hpe/tensorrt:cuda8-cudnn5",
+      "val": "hpe/tensorrt:cuda9-cudnn7",
       "type": "str",
       "desc": "The name of a docker image to use for TensorRT."
     },
