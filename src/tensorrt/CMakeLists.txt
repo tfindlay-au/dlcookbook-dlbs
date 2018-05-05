@@ -17,6 +17,13 @@ if(Boost_FOUND)
     target_link_libraries(tensorrt ${Boost_LIBRARIES})
 endif()
 
+find_package(OpenCV 2)
+if(OpenCV_FOUND)
+    add_definitions(-DHAS_OPENCV)
+    include_directories(${OpenCV_INCLUDE_DIRS})
+    target_link_libraries(tensorrt ${OpenCV_LIBS})
+endif()
+
 target_link_libraries(tensorrt libnvinfer.so.2)
 target_link_libraries(tensorrt nvcaffe_parser)
 

@@ -124,16 +124,22 @@ private:
   timer infer_timer_;  //!< Timer to measure pure inference times.
   
   int iter_idx_;       //!< Index when current iteration has started. Used when user requested intermidiate output.
+  
+  int num_batches_;    //!< In case we need to reset the state,
 public:
     /**
      * @brief Initializes time tracker.
      * @param num_batches Number of input data instances associated with
      * each element in time_tracker#batch_times_ and time_tracker#infer_times_.
      */
-    time_tracker(const int num_batches) {
-      infer_times_.reserve(num_batches);
-      batch_times_.reserve(num_batches);
-      iter_idx_ = 0;
+    time_tracker(const int num_batches) : num_batches_(num_batches) {
+        reset();
+    }
+    
+    void reset() {
+        infer_times_.reserve(num_batches_);
+        batch_times_.reserve(num_batches_);
+        iter_idx_ = 0;
     }
     
     void batch_started() {batch_timer_.restart();};
@@ -145,6 +151,9 @@ public:
     
     std::vector<float>& get_batch_times() { return batch_times_; }
     std::vector<float>& get_infer_times() { return infer_times_; }
+    
+    float last_batch_time() const { return batch_times_.back(); }
+    float last_infer_time() const { return infer_times_.back(); }
     
     int get_iter_idx() const { return iter_idx_; }
 };

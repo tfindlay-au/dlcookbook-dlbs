@@ -26,39 +26,52 @@
 #include <chrono>
 #include <sstream>
 #include <fstream>
+#include <thread>
 #include <ctime>
 
 #include <string.h>
 
 #include <cuda_runtime_api.h>
-//#include <cuda_fp16.h>
-
-#include <NvCaffeParser.h>
-#include <NvInfer.h>
 
 #include <boost/program_options.hpp>
 
 #include "logger.hpp"
-#include "calibrator.hpp"
+#include "infer_engine.hpp"
+#include "data_providers.hpp"
 
 /**
- *  An inference benchmark based on NVIDIA's TensorRT library. This benchmark also measures time
- *  required to copy data to/from GPU. So, this must be pretty realistic measurements.
+ *  @brief An inference benchmark based on NVIDIA's TensorRT library.
+ * 
+ *  The TensorRT backend benchmarks inference with one or several GPUs. If several
+ *  GPUs are provided, each GPU independently runs its own instance of inference engine.
+ *  Each GPU runs exactly the same configuration - model, batch size etc. As opposed to
+ *  training benchmarks, batch size does not change as number of GPUs changes. It's always
+ *  per GPU batch size. 
+ * 
+ *  This backend provides performance results at three different levels:
+ *    - Inference time is the pure inference time without any overhead associated with data ingestion
+ *                including CPU <--> GPU transfers. This is upper bound for the performance. We do not
+ *                prestage tensors now so it all happens sequentially:
+ *                     * Copy data from CPU to GPU memory
+ *                     * Run inference
+ *                     * Copy results from GPU to CPU memory
+ *    - Batch time is the time that includes inference time and time required to copy data to/form GPU.
+ *    - Actual time that includes inference time, time associated with CPU-GPU data transfers and time
+ *                associated with entire data ingestion pipeline. Copying data from storage into CPU
+ *                memory, preprocessing and any other overhead is taken into account. Not all is done
+ *                sequentially. In particular, data ingestion into request queue is done in multiple background
+ *                threads simoultaneously with GPU computations. This time is useful to benchmark preprocessing
+ *                efficiency and storage.
  */
 
 using namespace nvinfer1;
 using namespace nvcaffeparser1;
 
-
-/**
- * exec <config> <model> <batch-size> <num-iters> [input_name] [output_name] [data_type]
- * https://devblogs.nvidia.com/parallelforall/deploying-deep-learning-nvidia-tensorrt/
- * https://github.com/dusty-nv/jetson-inference/blob/master/tensorNet.cpp
- */
 int main(int argc, char **argv) {
+  tests::raw_img_data_provider_tests::read_image();
+  return 0;
   tensorrt_logger logger;
-  tensorrt_calibrator calibrator;
-  tensorrt_profiler profiler;
+
   // Define and parse commadn lien arguments
   std::string model, model_file, dtype("float32"), input_name("data"), output_name("prob"), cache_path("");
   int batch_size(1), num_warmup_batches(0), num_batches(1), report_frequency(-1);
@@ -98,7 +111,7 @@ int main(int argc, char **argv) {
     if (vm.count("help")) { 
       std::cout << "TensorRT Benchmarks" << std::endl
                 << desc << std::endl
-                << "version 2.0.2 (nv-tensorrt-repo-ubuntu1604-7-ea-cuda8.0_2.0.2-1_amd64)" << std::endl;
+                << "version " << NV_GIE_MAJOR << "." << NV_GIE_MINOR << "." << NV_GIE_PATCH << std::endl;
       return 0;
     }
     po::notify(vm);
@@ -108,139 +121,69 @@ int main(int argc, char **argv) {
     return 1;
   }
 
-  // Figure out type of data to work with
-  if (dtype == "float") {
-    dtype = "float32";
-  }
-  const DataType data_type = (
-    dtype == "float32" ? DataType::kFLOAT : 
-                         (dtype == "float16" ? DataType::kHALF : 
-                                               DataType::kINT8)
-  );
-
-  logger.log_info("[main] Creating inference builder");
-  IBuilder* builder = createInferBuilder(logger);
-
-  // Parse the caffe model to populate the network, then set the outputs.
-  // For INT8 inference, the input model must be specified with 32-bit weights.
-  logger.log_info("[main] Creating network and Caffe parser (model: " + model_file + ")");
-  INetworkDefinition* network = builder->createNetwork();
-  ICaffeParser* caffe_parser = createCaffeParser();
-  const IBlobNameToTensor* blob_name_to_tensor = caffe_parser->parse(
-    model_file.c_str(), // *.prototxt caffe model definition
-    nullptr,       // if null, random weights?
-    *network, 
-    (data_type == DataType::kINT8 ? DataType::kFLOAT : data_type)
-  );
-    
-  // Specify what tensors are output tensors.
-  network->markOutput(*blob_name_to_tensor->find(output_name.c_str()));
-
-  // Build the engine.
-  builder->setMaxBatchSize(batch_size);
-  builder->setMaxWorkspaceSize(1 << 30); 
-  // Half and INT8 precision specific options
-  if (data_type == DataType::kHALF) {
-    logger.log_info("Enabling FP16 mode");
-    builder->setHalf2Mode(true);
-  } else if (data_type == DataType::kINT8) {
-    logger.log_info("Enabling INT8 mode");
-    calibrator.setBatchSize(batch_size);
-
-    // Allocate memory but before figure out size of input tensor.
-    const nvinfer1::ITensor* input_tensor = blob_name_to_tensor->find(input_name.c_str());
-    calibrator.initialize(get_tensor_size(input_tensor), 10, model, cache_path);
-
-    builder->setInt8Mode(true);
-    builder->setInt8Calibrator(&calibrator);
-  } else {
-    logger.log_info("Enabling FP32 mode");
-  }
-   
-  logger.log_info("[main] Building CUDA engine");
-  // This is where we need to use calibrator
-  ICudaEngine* engine = builder->buildCudaEngine(*network);
-    
-  logger.log_info("[main] Getting network bindings");
-  logger.log_bindings(engine); 
-  // We need to figure out number of elements in input/output tensors.
-  // Also, we need to figure out their indices.
-  const auto num_bindings = engine->getNbBindings();
-  const int input_index = engine->getBindingIndex(input_name.c_str()), 
-            output_index = engine->getBindingIndex(output_name.c_str());
-  if (input_index < 0) { logger.log_error("Input blob not found."); }
-  if (output_index < 0) { logger.log_error("Output blob not found."); }
-  const int input_size = get_binding_size(engine, input_index),    // Number of elements in 'data' tensor.
-            output_size = get_binding_size(engine, output_index);  // Number of elements in 'prob' tensor.
-    
-  // Input/output data in host memory:
-  std::vector<float> input(batch_size * input_size);
-  std::vector<float> output(batch_size * output_size);
-  fill_random(input);
-    
-  // Input/output data in GPU memory
-  logger.log_info("[main] Filling input tensors with random data");
-  std::vector<void*> buffers(num_bindings, 0);
-  cudaCheck(cudaMalloc(&(buffers[input_index]), sizeof(float) * batch_size * input_size));
-  cudaCheck(cudaMalloc(&(buffers[output_index]), sizeof(float) * batch_size * output_size));
+  // Create two concurrent queues, one for inference requests (data_queue) and one
+  // for results (decision_queue). These queue objects do not spawn any threads.
+  thread_safe_queue<infer_task*> data_queue, decision_queue;
+  // Create pool of inference engines. All inference engines will be listening to data queue
+  // for new inference requests. All engines will be exactly the same - model, batch size etc.
+  // There will be a 1:1 mapping between GPU and inference engines.
+  infer_engine_pool engine_pool("0", logger, model, model_file, dtype, batch_size, num_batches,
+                                vm.count("profile") > 0, output_name, input_name, cache_path);
+  // Create pool of available task request objects. These objects (infer_task) will be initialized
+  // to store input/output tensors so there will be no need to do memory allocations during benchmark.
+  task_pool<infer_task> task_pool(10, engine_pool.input_size(), engine_pool.output_size(), true);
+  // Create data provider. The data provider will spawn at least one thread. It will fetch free task objects
+  // from pool of task objects, will populate them with data and will submit tasks to data queue. All
+  // preprocessing logic needs to be implemented in data provider.
+  synthetic_data_provider<infer_task> data_provider(&task_pool, &data_queue);
+  data_provider.start();
+  // Start pool of inference engines. This will start one thread per engine. Individual inference engines
+  // will be fetching data from data queue, will be doing inference and will be submitting same task request
+  // objects with inference results and statistics to decision queue.
+  engine_pool.start(data_queue, decision_queue);
   
-  logger.log_info("[main] Creating execution context");
-  IExecutionContext* exec_ctx = engine->createExecutionContext();
-  if (vm.count("profile")) { exec_ctx->setProfiler(&profiler); }
-  
-  const auto num_input_bytes = sizeof(float) * input.size();
-  const auto num_output_bytes = sizeof(float) * output.size();
-  
+  const int num_engines = engine_pool.num_engines();
   logger.log_info("[main] Running warmup iterations");
   for (int i=0; i<num_warmup_batches; ++i) {
-    cudaCheck(cudaMemcpy(buffers[input_index], input.data(), num_input_bytes, cudaMemcpyHostToDevice));
-    if(!exec_ctx->execute(batch_size, buffers.data())) {logger.log_error("Kernel was not run");}
-    cudaCheck(cudaMemcpy(output.data(), buffers[output_index], num_output_bytes, cudaMemcpyDeviceToHost));
+      // Do warmup iterations. Just fetch inference results from decision queue
+      // and put them back to pool of free task objects. All data preprocessing,
+      // submission and classification are done in backgroud threads.
+      for (int i=0; i<num_engines; ++i)
+        task_pool.release(decision_queue.pop());
   }
-  //
+  if (engine_pool.layer_wise_profiling()) {
+      // This reset will not happen immidiately, but next time an engine processes a batch.
+      // So, they may reset their states at slightly different moments.
+      engine_pool.reset();
+  }
   logger.log_info("[main] Running benchmarks");
   time_tracker tm_tracker(num_batches);
-  if (vm.count("profile")) { 
-    profiler.reset(); 
-  }
   for (int i=0; i<num_batches; ++i) {
     tm_tracker.batch_started();
-    // Copy Input Data to the GPU.
-    cudaCheck(cudaMemcpy(buffers[input_index], input.data(), num_input_bytes, cudaMemcpyHostToDevice));
-    // Launch an instance of the GIE compute kernel.
-    tm_tracker.infer_started();
-    if(!exec_ctx->execute(batch_size, buffers.data())) {logger.log_error("Kernel was not run");}
-    tm_tracker.infer_done();
-    // Copy Output Data to the Host.
-    cudaCheck(cudaMemcpy(output.data(), buffers[output_index], num_output_bytes, cudaMemcpyDeviceToHost));
+    for (int i=0; i<num_engines; ++i)
+        task_pool.release(decision_queue.pop());
     tm_tracker.batch_done();
-    //
     if (report_frequency > 0 && i>0 && i%report_frequency == 0) {
-      logger.log_progress(tm_tracker.get_batch_times(), tm_tracker.get_iter_idx(), batch_size, "batch_");
+      logger.log_progress(tm_tracker.get_batch_times(), tm_tracker.get_iter_idx(), batch_size, "total_");
       tm_tracker.new_iteration();
-      logger.log_progress(tm_tracker.get_infer_times(), tm_tracker.get_iter_idx(), batch_size, "");
     }
   }
-  
-  if (vm.count("profile")) { 
-    profiler.printLayerTimes(num_batches);
-  }
+  // Shutdown everything and wait for all threads to exit.
+  task_pool.stop();
+  data_provider.stop();
+  engine_pool.stop();
+  data_provider.join();
+  engine_pool.join();
+  // Log final results.
   logger.log_info("[main] Reporting results");
-  logger.log_final_results(tm_tracker.get_batch_times(), batch_size, "batch_", !do_not_report_batch_times);
-  logger.log_final_results(tm_tracker.get_infer_times(), batch_size, "", !do_not_report_batch_times);
-  
-  logger.log_info("[main] Cleaning buffers");
-  if (data_type == DataType::kINT8) {
-    calibrator.freeCalibrationMemory();
+  for (int i=0; i<num_engines; ++i) {
+      time_tracker *tracker = engine_pool.engine(i)->get_time_tracker();
+      const std::string gpu_id = std::to_string(engine_pool.engine(i)->gpu_id());
+      logger.log_final_results(tracker->get_batch_times(), batch_size, "gpu_" + gpu_id + "_infer_", !do_not_report_batch_times);
+      logger.log_final_results(tracker->get_batch_times(), batch_size, "gpu_" + gpu_id + "_batch_", !do_not_report_batch_times);
   }
-  cudaFree(buffers[output_index]);
-  cudaFree(buffers[input_index]);
-  exec_ctx->destroy();
-  network->destroy();
-  caffe_parser->destroy();
-  engine->destroy();
-  builder->destroy();
-
+  logger.log_final_results(tm_tracker.get_batch_times(), batch_size*num_engines, "total_", false);
+  logger.log_final_results(tm_tracker.get_batch_times(), batch_size*num_engines, "", !do_not_report_batch_times);
   return 0;
 }
 
