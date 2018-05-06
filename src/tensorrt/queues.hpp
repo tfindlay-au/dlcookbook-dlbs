@@ -18,6 +18,7 @@
 #ifndef DLBS_TENSORRT_BACKEND_QUEUES
 #define DLBS_TENSORRT_BACKEND_QUEUES
 
+#include <exception>
 #include <mutex>
 #include <queue>
 #include <thread>
@@ -25,13 +26,32 @@
 #include <chrono>
 #include <condition_variable>
 
+class queue_closed : public std::exception {
+    const std::string msg = "Queue was closed while performing requested operation.";
+public:
+    queue_closed() {}
+    const char* what() const noexcept override { return msg.c_str(); }
+};
+
 template <typename T>
 class abstract_queue {
 protected:
     std::mutex m_;
+    std::condition_variable push_evnt_;
+    std::condition_variable pop_evnt_;
+    std::atomic_bool closed_;
 public:
-    virtual T pop() = 0;
-    virtual void push(const T& item) = 0;
+    void close() { 
+        std::unique_lock<std::mutex> lock(m_);
+        closed_ = true;
+        push_evnt_.notify_all();
+        pop_evnt_.notify_all();
+    }
+    bool is_closed() const { return closed_; }
+    
+    virtual T pop() throw (queue_closed) = 0;
+    virtual void push(const T& item) throw (queue_closed) = 0;
+    virtual void empty_queue(std::vector<T>& queue_content) = 0;
 };
 
 /**
@@ -45,19 +65,35 @@ template <typename T>
 class infinite_queue : public abstract_queue<T> {
 private:
     using abstract_queue<T>::m_;
+    using abstract_queue<T>::closed_;
     T item_;
+    bool emptied_ = false;
 public:
     infinite_queue(const T& item) {
+        closed_ = false;
         item_ = item;
     }
-    void push(const T& item) override {
+    void push(const T& item) throw (queue_closed) override {
+        if (closed_) 
+            throw queue_closed();
         std::lock_guard<std::mutex> lock(m_);
         item_ = item;
     }
     
-    T pop() override{
+    T pop() throw (queue_closed) override {
+        if (closed_)
+            throw queue_closed();
         std::lock_guard<std::mutex> lock(m_);
         return item_;
+    }
+    
+    void empty_queue(std::vector<T>& queue_content) override {
+        if (!closed_ || emptied_)
+            return;
+        std::lock_guard<std::mutex> lock(m_);
+        queue_content.clear();
+        queue_content.push_back(item_);
+        emptied_ = true;
     }
 };
 
@@ -69,9 +105,17 @@ template <typename T>
 class thread_safe_queue : public abstract_queue<T> {
 private:
     using abstract_queue<T>::m_;
-    std::condition_variable cond_;
+    using abstract_queue<T>::closed_;
+    using abstract_queue<T>::push_evnt_;
+    using abstract_queue<T>::pop_evnt_;
     std::queue<T> queue_;
+    int max_size_;
 public:
+    thread_safe_queue(const int max_size=0) : max_size_(max_size) {
+        closed_ = false;
+    }
+    thread_safe_queue(const thread_safe_queue& q) = delete;
+
     /**
      * @brief Pushes the data into the queue. 
      * @param item Item to push into the queue.
@@ -79,42 +123,87 @@ public:
      * Depending of template type, this methid may or may not create copy.
      * The TensorRT benchmarking backed uses pointers, so no copies are created.
      */
-    void push(const T& item) override {
-        std::lock_guard<std::mutex> lock(m_);
+    void push(const T& item) throw (queue_closed) override {
+        if (closed_)
+            throw queue_closed();
+        std::unique_lock<std::mutex> lock(m_);
+        pop_evnt_.wait(
+            lock, 
+            [this] { return (closed_ || max_size_ <=0 || queue_.size() < max_size_); }
+        );
+        if (closed_)
+            throw queue_closed();
         queue_.push(item);
-        cond_.notify_one();
+        push_evnt_.notify_one();
     }
     /**
      * @brief Returns front element from the queue. This is a blocking call.
      */
-    T pop() override{
+    T pop() throw (queue_closed) override {
+        if (closed_)
+            throw queue_closed();
         std::unique_lock<std::mutex> lock(m_);
-        cond_.wait(lock, [this] { return !queue_.empty(); });
+        push_evnt_.wait(
+            lock, 
+            [this] { return closed_ || !queue_.empty(); }
+        );
+        if (closed_)
+            throw queue_closed();
         T item = queue_.front();
         queue_.pop();
+        pop_evnt_.notify_one();
         return item;
+    }
+    
+    void empty_queue(std::vector<T>& queue_content) override {
+        if (!closed_)
+            return;
+        std::unique_lock<std::mutex> lock(m_);
+        queue_content.clear();
+        while (!queue_.empty()) {
+            queue_content.push_back(queue_.front());
+            queue_.pop();
+        }
+        if (!queue_content.empty())
+            std::reverse(queue_content.begin(), queue_content.end());
     }
 };
 
 
 namespace tests {
-    namespace infinite_queue_tests {
-        void worker(infinite_queue<int*>& q, long& counter) {
-            while (q.pop() != nullptr) {
-                counter ++;
-                std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    namespace queue_tests {
+        void consumer(abstract_queue<int>* queue, long& counter) {
+            try {
+                while (true) {
+                    queue->pop();
+                    counter ++;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+                }
+            } catch(queue_closed) {
             }
         }
-        void test() {
-            infinite_queue<int*> q(nullptr);
-            int v=1;
-            q.push(&v);
-            long counter(0);
-            std::thread w(worker, std::ref(q), std::ref(counter));
+        void provider(abstract_queue<int>* queue, long& counter) {
+            try {
+                while (true) {
+                    queue->push(1);
+                    counter ++;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                }
+            } catch(queue_closed) {
+            }
+        }
+
+        void test_infinite_queue() {
+            infinite_queue<int> q(1);
+            long consumer_counter(0), provider_counter(0);
+            std::thread c(consumer, &q, std::ref(consumer_counter));
+            std::thread p(provider, &q, std::ref(provider_counter));
             std::this_thread::sleep_for(std::chrono::milliseconds(2000));
-            q.push(nullptr);
-            w.join();
-            std::cout << "counter=" << counter << std::endl;
+            q.close();
+            c.join();
+            p.join();
+            std::cout << "consumer_counter=" << consumer_counter << std::endl;
+            std::cout << "provider_counter=" << provider_counter << std::endl;
         }
     }
 }

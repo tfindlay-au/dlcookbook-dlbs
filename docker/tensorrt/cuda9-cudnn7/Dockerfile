@@ -13,7 +13,7 @@ RUN cp /etc/apt/sources.list.d/cuda.list /etc/apt/sources.list.d/cuda.list.bak &
     printf '#%s' "$(cat /etc/apt/sources.list.d/nvidia-ml.list)" >/etc/apt/sources.list.d/nvidia-ml.list
 #    apt-get update && apt-get install -y --no-install-recommends apt-transport-https && \
 #    mv /etc/apt/sources.list.d/cuda.list.bak /etc/apt/sources.list.d/cuda.list && \
-#    mv /etc/apt/sources.list.d/nvidia-ml.list.bak /etc/apt/sources.list.d/nvidia-ml.list 
+#    mv /etc/apt/sources.list.d/nvidia-ml.list.bak /etc/apt/sources.list.d/nvidia-ml.list
 
 RUN dpkg -i /${TENSORRT_PACKAGE} && \
     rm /${TENSORRT_PACKAGE} && \
@@ -27,6 +27,7 @@ RUN dpkg -i /${TENSORRT_PACKAGE} && \
         python-libnvinfer-doc \
         uff-converter-tf \
         libboost-program-options-dev \
+        libopencv-dev \
         ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 

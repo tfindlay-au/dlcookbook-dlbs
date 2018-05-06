@@ -37,6 +37,35 @@
       "type": "bool",
       "desc": "If set, DLBS won't log individual batch times."
     },
+    "tensorrt.resize_method": {
+      "val": "resize",
+      "type": "str",
+      "val_domain": ["resize", "crop"],
+      "desc": [
+        "Method to resize images: normal resize or crop. Resize is expensive, crop is not.",
+        "If crop is not applicable due to image being smaller, resize is used instead."
+      ]
+    },
+    "tensorrt.num_prefetchers": {
+      "val": "$(${exp.num_gpus} * 3)$",
+      "type": "int",
+      "desc": "Number of prefetch threads (data readers)"
+    },
+    "tensorrt.num_decoders": {
+      "val": "$(${exp.num_gpus} * 3)$",
+      "type": "int",
+      "desc": "Number of decoder threads (preprocessors that convert images to tensors)."
+    },
+    "tensorrt.prefetch_queue_size": {
+      "val": "$(${exp.num_gpus} * 3)$",
+      "type": "int",
+      "desc": "Maximal number of batches of images in a queue of loaded but non-decoded images."
+    },
+    "tensorrt.inference_queue_size": {
+      "val": "$(${exp.num_gpus} * 3)$",
+      "type": "int",
+      "desc": "Number of pre-allocated inference requests."
+    },
     "tensorrt.args": {
       "val": [
         "--model ${exp.model}",
@@ -50,7 +79,14 @@
         "--output ${tensorrt.output}",
         "--cache $('' if '${tensorrt.cache}' == '' else '${tensorrt.cache}' if ${exp.docker} is False else '/workspace/tensorrt_cache')$",
         "--report_frequency=${tensorrt.report_frequency}",
-        "$('--no_batch_times' if ${tensorrt.no_batch_times} else '')$"
+        "$('--no_batch_times' if ${tensorrt.no_batch_times} else '')$",
+        "--gpus ${exp.gpus}",
+        "--data_dir $('' if not '${exp.data_dir}' else '${exp.data_dir}' if ${exp.docker} is False else '/workspace/data/')$",
+        "--resize_method ${tensorrt.resize_method}" ,
+        "--num_prefetchers ${tensorrt.num_prefetchers}",
+        "--num_decoders ${tensorrt.num_decoders}",
+        "--prefetch_queue_size ${tensorrt.prefetch_queue_size}",
+        "--inference_queue_size ${tensorrt.inference_queue_size}"
       ],
       "type": "str",
       "desc": "Command line arguments that launcher uses to launch TensorRT."
@@ -79,6 +115,7 @@
         "$('--volume=${runtime.cuda_cache}:/workspace/cuda_cache' if '${runtime.cuda_cache}' else '')$",
         "$('--volume=${tensorrt.cache}:/workspace/tensorrt_cache' if '${tensorrt.cache}' != '' else '')$",
         "$('--volume=${monitor.pid_folder}:/workspace/tmp' if ${monitor.frequency} > 0 else '')$",
+        "$('--volume=${exp.data_dir}:/workspace/data' if '${exp.data_dir}' else '')$",
         "${exp.docker_args}",
         "${exp.docker_image}"
       ],

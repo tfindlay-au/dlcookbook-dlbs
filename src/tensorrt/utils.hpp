@@ -17,6 +17,10 @@
 #ifndef DLBS_TENSORRT_BACKEND_UTILS
 #define DLBS_TENSORRT_BACKEND_UTILS
 
+#include <exception>
+#include <vector>
+#include <fstream>
+
 // Check CUDA result.
 #define cudaCheck(ans) { cudaCheckf((ans), __FILE__, __LINE__); }
 inline void cudaCheckf(const cudaError_t code, const char *file, const int line, const bool abort=true) {
@@ -36,6 +40,30 @@ void fill_random(std::vector<float>& vec) {
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
   auto gen = std::bind(dist, mersenne_engine);
   std::generate(std::begin(vec), std::end(vec), gen);
+}
+
+/**
+ * @brief Read text file \p name line by line putting lines into \p lines.
+ * @param name[in] A file name.
+ * @param lines[out] Vector with lines from this file.
+ */
+void read_file(const std::string& name, std::vector<std::string>& lines) {
+    lines.clear();
+    std::ifstream file(name);
+    if (!file)
+        throw std::invalid_argument("File cannot be opened: " + name);
+    std::string line;
+    while (std::getline(file, line))
+        lines.push_back(line);
+}
+
+void get_my_shard(const int length, const int num_shards, const int my_shard,
+                  int& shard_pos, int &shard_length) {
+    shard_length =  length / num_shards;
+    shard_pos = shard_length * my_shard;
+    if (my_shard == num_shards - 1 && shard_length*num_shards != length) {
+        shard_length = length - shard_length*my_shard;
+    }
 }
 
 /**

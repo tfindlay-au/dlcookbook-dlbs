@@ -30,3 +30,4 @@ target_link_libraries(tensorrt nvcaffe_parser)
 install(TARGETS tensorrt RUNTIME DESTINATION bin)
 
 set(CMAKE_BUILD_TYPE Release)
+#set(CMAKE_BUILD_TYPE Debug)
