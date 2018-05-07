@@ -19,7 +19,11 @@
 
 #include <exception>
 #include <vector>
+#include <iostream>
 #include <fstream>
+#include <algorithm>
+#include <dirent.h>
+#include <sys/stat.h>
 
 // Check CUDA result.
 #define cudaCheck(ans) { cudaCheckf((ans), __FILE__, __LINE__); }
@@ -43,19 +47,125 @@ void fill_random(std::vector<float>& vec) {
 }
 
 /**
- * @brief Read text file \p name line by line putting lines into \p lines.
- * @param name[in] A file name.
- * @param lines[out] Vector with lines from this file.
+ * @brief Various utility methods to work with file system, in particular, 
+ * working with raw image datasets.
  */
-void read_file(const std::string& name, std::vector<std::string>& lines) {
-    lines.clear();
-    std::ifstream file(name);
-    if (!file)
-        throw std::invalid_argument("File cannot be opened: " + name);
-    std::string line;
-    while (std::getline(file, line))
-        lines.push_back(line);
-}
+class fs_utils {
+public:
+    /**
+     * @brief Makes sure that a path 'dir', which is supposed to by a directory,
+     * ends with one forward slash '/'
+     * @param dir A directory name.
+     */
+    static std::string normalize_path(std::string dir) {
+        const auto pos = dir.find_last_not_of("/");
+        if (pos != std::string::npos && pos + 1 < dir.size())
+            dir.erase(dir.begin() + pos + 1, dir.end());
+        dir += "/";
+        return dir;
+    }
+    /**
+    * @brief Read text file \p name line by line putting lines into \p lines.
+    * @param name[in] A file name.
+    * @param lines[out] Vector with lines from this file.
+    * @return True of file exists, false otherwise
+    */
+    static bool read_cache(const std::string& dir, std::vector<std::string>& fnames) {
+        std::ifstream fstream(dir + "/" + "dlbs_image_cache");
+        if (!fstream) return false;
+        std::string fname;
+        while (std::getline(fstream, fname))
+            fnames.push_back(fname);
+    }
+    /**
+     * @brief Writes a cache with file names if that cache does not exist.
+     * @param dir A dataset root directory.
+     * @param fnames A list of image file names.
+     * @return True if file exists or has been written, false otherwise.
+     * 
+     */
+    static bool write_cache(const std::string& dir, std::vector<std::string>& fnames) {
+        struct stat sb;
+        const std::string cache_fname = dir + "/" + "dlbs_image_cache";
+        if (stat(cache_fname.c_str(), &sb) == 0)
+            return true;
+        std::ofstream fstream(cache_fname.c_str());
+        if (!fstream)
+            return false;
+        for (const auto& fname : fnames) {
+            fstream << fname << std::endl;
+        }
+        return true;
+    }
+    /**
+     * @brief Prepend \p dir to all file names in \p files
+     * @param dir Full path to a dataset
+     * @param files Image files with relative file paths.
+     */
+    static void to_absolute_paths(const std::string& dir, std::vector<std::string>& fnames) {
+        const int num_fnames = fnames.size();
+        for (int i=0; i<num_fnames; ++i) {
+            fnames[i] = dir + fnames[i];
+        }
+    }
+    /**
+     * @brief Scan recursively directory \p dir and return image files. List of image files will 
+     * contain paths relative to \p dir.
+     * @param dir A root dataset directory.
+     * @param files A list of image files.
+     * @param subdir A subdirectory relative to \p dir. Used for recusrive scanning.
+     * @return A list of image files found in \p dir or its subdirectories. Images files are identified
+     * by relative paths from \p dir.
+     */
+    static void get_image_files(std::string dir, std::vector<std::string>& files, std::string subdir="") {
+        // Check that directory exists
+        struct stat sb;
+        if (!(stat(dir.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode)))
+            return;
+        // Scan this directory for files and other directories
+        const std::string abs_path = dir + subdir;
+        DIR *dir_handle = opendir(abs_path.c_str());
+        if (dir_handle == nullptr)
+            return;
+        struct dirent *de(nullptr);
+        while ((de = readdir(dir_handle)) != nullptr) {
+            const std::string dir_item(de->d_name);
+            if (dir_item == "." || dir_item == "..") {
+                continue;
+            }
+            bool is_file(false), is_dir(false);
+            if (de->d_type != DT_UNKNOWN) {
+                is_file = de->d_type == DT_REG;
+                is_dir = de->d_type == DT_DIR;
+            } else {
+                const std::string dir_item_path = dir + subdir + dir_item;
+                if (stat(dir_item_path.c_str(), &sb) != 0)
+                    continue;
+                is_file == S_ISREG(sb.st_mode);
+                is_dir == S_ISDIR(sb.st_mode);
+            }
+            if (is_dir) {
+                get_image_files(dir, files, subdir + dir_item + "/");
+            } else if (is_file) {
+                const auto pos = dir_item.find_last_of('.');
+                if (pos != std::string::npos) {
+                    std::string fext = dir_item.substr(pos + 1);
+                    std::transform(fext.begin(), fext.end(), fext.begin(), ::tolower);
+                    if (fext == "jpg" || fext == "jpeg") {
+                        files.push_back(subdir + dir_item);
+                    }
+                }
+            }
+        }
+        closedir(dir_handle);
+    }
+};
+
+
+
+
+
+
 
 void get_my_shard(const int length, const int num_shards, const int my_shard,
                   int& shard_pos, int &shard_length) {

@@ -260,12 +260,17 @@ public:
     image_provider(const image_provider_opts& opts, inference_msg_pool* pool,
                    abstract_queue<inference_msg*>* request_queue) 
         : data_provider(pool, request_queue), prefetch_queue_(opts.prefetch_queue_size_), opts_(opts) {
-        read_file(opts_.data_dir_ + "/images.txt", file_names_);
-        const int num_files_read = file_names_.size();
-        std::cout << "Number of images: " << num_files_read << std::endl;
-        for (int i=0; i<num_files_read; ++i) {
-            file_names_[i] = opts_.data_dir_ + file_names_[i];
+        opts_.data_dir_ = fs_utils::normalize_path(opts_.data_dir_);
+        if (!fs_utils::read_cache(opts_.data_dir_, file_names_)) {
+            std::cout << "[image_provider] read " << file_names_.size() <<  "from file system." << std::endl;
+            fs_utils::get_image_files(opts_.data_dir_, file_names_);
+            if (!fs_utils::write_cache(opts_.data_dir_, file_names_)) {
+                std::cerr << "[image_provider] failed to write file cache." << std::endl;
+            }
+        } else {
+            std::cout << "[image_provider] read " << file_names_.size() <<  "from cache." << std::endl;
         }
+        fs_utils::to_absolute_paths(opts_.data_dir_, file_names_);
         prefetchers_.resize(opts_.num_prefetchers_, nullptr);
         decoders_.resize(opts_.num_decoders_, nullptr);
     }

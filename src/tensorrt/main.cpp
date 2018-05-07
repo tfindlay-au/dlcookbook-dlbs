@@ -77,6 +77,12 @@ using namespace nvcaffeparser1;
 int main(int argc, char **argv) {
   //tests::image_provider_tests::benchmark_prefetch_readers();
   //tests::image_provider_tests::benchmark_data_provider();
+  //std::vector<std::string> files;
+  //auto path = fs_utils::normalize_path("/home/serebrya/data/train");
+  //fs_utils::get_image_files(path, files);
+  //std::cout << "path: " << path << std::endl;
+  //std::cout << "files.size() = " << files.size() << std::endl;
+  //std::cout << "files[0] " << files[0] << std::endl;
   //return 0;
   tensorrt_logger logger;
 

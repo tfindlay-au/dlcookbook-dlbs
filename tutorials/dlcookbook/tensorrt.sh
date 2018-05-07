@@ -12,8 +12,8 @@ loglevel=warning
 #------------------------------------------------------------------------------#
 # For more detailed comments see './bvlc_caffe.sh' script.
 #------------------------------------------------------------------------------#
-# Example: a minimal working example to run TensorRT. Run one experiment and
-# store results in a file.
+# Example: a minimal working example to run TensorRT with synthetic data. Run one
+# experiment and store results in a file.
 # If you run multiple experiments, you really want to make sure that experiment
 # log file is different for every experiment.
 # This example runs in a container.
@@ -22,12 +22,33 @@ if true; then
     python $script $action --log-level=$loglevel\
                            -Pexp.framework='"tensorrt"'\
                            -Pexp.docker=true\
-                           -Pexp.gpus='0'\
+                           -Pexp.gpus='"0"'\
                            -Pexp.phase='"inference"'\
                            -Vexp.model='["resnet18"]'\
                            -Pexp.log_file='"${BENCH_ROOT}/tensorrt/${exp.model}.log"'
     params="exp.status,exp.framework_title,exp.effective_batch,results.time,results.throughput,exp.model_title"
-    python $parser ./$framework/*.log --output_params ${params}
+    python $parser ./$framework/*.log --output-params ${params}
+fi
+#------------------------------------------------------------------------------#
+# Example: run TensorRT with real data. Real data should be stored similar to raw
+# ImageNet - a number of image files in various folders.
+#------------------------------------------------------------------------------#
+if false; then
+    rm -rf ./$framework
+    python $script $action --log-level=$loglevel\
+                           -Pexp.data_dir='"/home/serebrya/data"' \
+                           -Ptensorrt.num_prefetchers=4\
+                           -Ptensorrt.num_decoders=8\
+                           -Ptensorrt.prefetch_queue_size=16\
+                           -Ptensorrt.inference_queue_size=16\
+                           -Pexp.framework='"tensorrt"'\
+                           -Pexp.docker=true\
+                           -Pexp.gpus='"0"'\
+                           -Pexp.phase='"inference"'\
+                           -Vexp.model='["resnet18"]'\
+                           -Pexp.log_file='"${BENCH_ROOT}/tensorrt/${exp.model}.log"'
+    params="exp.status,exp.framework_title,exp.effective_batch,results.time,results.throughput,exp.model_title"
+    python $parser ./$framework/*.log --output-params ${params}
 fi
 #------------------------------------------------------------------------------#
 # Example: same experiment as above but runs in a host OS. I must run this as a root
@@ -37,11 +58,12 @@ if false; then
     rm -rf ./$framework
     python $script $action --log-level=$loglevel\
                            -Pexp.framework='"tensorrt"' -Pexp.docker=false\
-                           -Pexp.gpus='0' -Pexp.phase='"inference"'\
+                           -Pexp.gpus='"0"'
+                           -Pexp.phase='"inference"'\
                            -Vexp.model='["resnet18"]'\
                            -Pexp.log_file='"${BENCH_ROOT}/tensorrt/${exp.model}.log"'
     params="exp.status,exp.framework_title,exp.effective_batch,results.time,results.throughput,exp.model_title"
-    python $parser ./$framework/*.log --output_params ${params}
+    python $parser ./$framework/*.log --output-params ${params}
 fi
 #------------------------------------------------------------------------------#
 # Example: this one runs TensorRT with several models and several batch sizes
@@ -50,7 +72,7 @@ if false; then
     python $script $action --log-level=$loglevel\
                    -Pexp.framework='"tensorrt"'\
                    -Pexp.docker=true\
-                   -Pexp.gpus='0'\
+                   -Pexp.gpus='"0"'\
                    -Pexp.log_file='"${BENCH_ROOT}/tensorrt/${exp.model}_${exp.effective_batch}.log"'\
                    -Vexp.model='["alexnet", "googlenet", "deep_mnist", "eng_acoustic_model", "resnet50", "resnet101", "resnet152", "vgg16", "vgg19"]'\
                    -Vexp.replica_batch='[2, 4]'\
@@ -58,7 +80,7 @@ if false; then
                    -Pexp.num_warmup_batches=1\
                    -Pexp.num_batches=1
     params="exp.framework_title,exp.effective_batch,results.time,results.total_time,exp.model_title"
-    python $parser ./$framework/*.log --output_params ${params}
+    python $parser ./$framework/*.log --output-params ${params}
 fi
 #------------------------------------------------------------------------------#
 # Example: one approach to run TensorRT inference benchmarks on multiple GPUs.
