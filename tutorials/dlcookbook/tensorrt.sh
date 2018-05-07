@@ -7,6 +7,7 @@ export CUDA_CACHE_PATH=/dev/shm/cuda_cache
 script=$DLBS_ROOT/python/dlbs/experimenter.py
 parser=$DLBS_ROOT/python/dlbs/logparser.py
 action=run
+#action=validate
 framework=tensorrt
 loglevel=warning
 #------------------------------------------------------------------------------#
@@ -22,10 +23,12 @@ if true; then
     python $script $action --log-level=$loglevel\
                            -Pexp.framework='"tensorrt"'\
                            -Pexp.docker=true\
-                           -Pexp.gpus='"0"'\
+                           -Vexp.gpus='["0", "0,1", "0,1,2,3"]'\
+                           -Pexp.num_warmpup_batches=50\
+                           -Pexp.num_batches=200\
                            -Pexp.phase='"inference"'\
                            -Vexp.model='["resnet18"]'\
-                           -Pexp.log_file='"${BENCH_ROOT}/tensorrt/${exp.model}.log"'
+                           -Pexp.log_file='"${BENCH_ROOT}/tensorrt/${exp.model}_${exp.num_gpus}.log"'
     params="exp.status,exp.framework_title,exp.effective_batch,results.time,results.throughput,exp.model_title"
     python $parser ./$framework/*.log --output-params ${params}
 fi
@@ -36,17 +39,17 @@ fi
 if false; then
     rm -rf ./$framework
     python $script $action --log-level=$loglevel\
-                           -Pexp.data_dir='"/home/serebrya/data"' \
-                           -Ptensorrt.num_prefetchers=4\
-                           -Ptensorrt.num_decoders=8\
+                           -Pexp.data_dir='"/fdata/serebrya/imagenet/data/train"' \
+                           -Ptensorrt.num_prefetchers=6\
+                           -Ptensorrt.num_decoders=10\
                            -Ptensorrt.prefetch_queue_size=16\
                            -Ptensorrt.inference_queue_size=16\
                            -Pexp.framework='"tensorrt"'\
                            -Pexp.docker=true\
-                           -Pexp.gpus='"0"'\
+                           -Vexp.gpus='["0", "0,1", "0,1,2,3"]'\
                            -Pexp.phase='"inference"'\
                            -Vexp.model='["resnet18"]'\
-                           -Pexp.log_file='"${BENCH_ROOT}/tensorrt/${exp.model}.log"'
+                           -Pexp.log_file='"${BENCH_ROOT}/tensorrt/${exp.model}_${exp.num_gpus}.log"'
     params="exp.status,exp.framework_title,exp.effective_batch,results.time,results.throughput,exp.model_title"
     python $parser ./$framework/*.log --output-params ${params}
 fi

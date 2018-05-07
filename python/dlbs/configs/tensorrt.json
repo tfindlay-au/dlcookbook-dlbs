@@ -161,7 +161,7 @@
       "condition":{ "exp.framework": "tensorrt" },
       "parameters": {
         "exp.framework_title": "TensorRT",
-        "exp.status": "$('disabled' if ('${exp.phase}'=='training') or ('${exp.device_type}'=='cpu') or (${exp.num_local_gpus}>1) else 'ok')$"
+        "exp.status": "$('disabled' if ('${exp.phase}'=='training') or ('${exp.device_type}'=='cpu') else 'ok')$"
       }
     },
     {
