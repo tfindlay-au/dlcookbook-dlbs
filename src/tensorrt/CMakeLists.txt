@@ -3,6 +3,12 @@ project(tensorrt_benchmarks)
 
 add_compile_options(-std=c++11)
 
+#add_compile_options(-pedantic -Wall -Wextra -Wcast-align -Wcast-qual -Wctor-dtor-privacy -Wdisabled-optimization)
+#add_compile_options(-Wformat=2 -Winit-self -Wlogical-op -Wmissing-declarations -Wmissing-include-dirs -Wnoexcept)
+#add_compile_options(-Wold-style-cast -Woverloaded-virtual -Wredundant-decls -Wshadow -Wsign-conversion -Wsign-promo)
+#add_compile_options(-Wstrict-null-sentinel -Wswitch-default -Wundef -Werror -Wno-unused)
+#add_compile_options(-Wstrict-overflow=5)
+
 add_executable(tensorrt main.cpp)
 
 FIND_PACKAGE(CUDA COMPONENTS cudart REQUIRED)

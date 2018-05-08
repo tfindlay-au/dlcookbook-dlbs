@@ -25,15 +25,26 @@
  * @brief A structure that contains input/output data for an inference task. It's better
  * to create a pool of these objects and reuse them.
  */
-struct inference_msg {
+class inference_msg {
+private:
     std::vector<float> input_;   //!< Input data of shape [BatchSize, ...]
     std::vector<float> output_;  //!< Input data of shape [BatchSize, ...]
 
+    size_t batch_size_ = 0;      //!< Batch size of this inference message
+    
     float batch_time_ = 0;       //!< Total batch time including CPU <-> GPU transfer overhead
     float infer_time_ = 0;       //!< Inference time excluding data transfer overhead
     
     int gpu_ = 0;                //!< GPU that processed this task.
-
+public:
+    std::vector<float>& input() { return input_; }
+    std::vector<float>& output() { return output_; }
+    size_t batch_size() const { return batch_size_; }
+    float batch_time() const { return batch_time_; }
+    float infer_time() const { return infer_time_; }
+    
+    void set_batch_time(const float batch_time) { batch_time_ = batch_time; };
+    void set_infer_time(const float infer_time) { infer_time_ = infer_time; };
     /**
      * @brief Construct and initialize inference task.
      * @param input_size Number of elements in an input tensor 
@@ -42,7 +53,10 @@ struct inference_msg {
      * including batch dimension
      * @param randomize_input If true, randomly initialize input tensor.
      */
-    inference_msg(const int input_size, const int output_size, const bool randomize_input=false) {
+    inference_msg(const size_t batch_size,
+                  const size_t input_size, const size_t output_size,
+                  const bool randomize_input=false) {
+        batch_size_ = batch_size;
         input_.resize(input_size);
         output_.resize(output_size);
         if (randomize_input)
@@ -69,16 +83,16 @@ private:
     thread_safe_queue<inference_msg*> free_messages_;  //!< Messages that are currently available.
     std::atomic_bool stop_;
 public:
-    inference_msg_pool(const int count, const int input_size, const int output_size,
+    inference_msg_pool(const int count, const size_t batch_size, const size_t input_size, const size_t output_size,
                        const bool randomize_input=false) : stop_(false) {
         for (int i=0; i<count; ++i) {
-            inference_msg *msg= new inference_msg(input_size, output_size, randomize_input);
+            inference_msg *msg= new inference_msg(batch_size, input_size, output_size, randomize_input);
             messages_.push_back(msg);
             free_messages_.push(msg);
         }
     }
     ~inference_msg_pool() {
-        for (int i=0; i<messages_.size(); ++i) {
+        for (size_t i=0; i<messages_.size(); ++i) {
             delete messages_[i];
         }
     }

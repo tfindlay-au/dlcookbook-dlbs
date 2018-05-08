@@ -19,6 +19,10 @@
 #define DLBS_TENSORRT_BACKEND_DATA_PROVIDERS
 
 #include "infer_msg.hpp"
+#include "logger.hpp"
+
+class image_provider_opts;
+std::ostream &operator<<(std::ostream &os, image_provider_opts const &opts);
 
 /**
  * @brief Base abstract class for all data providers.
@@ -112,31 +116,34 @@ enum class resize_method : int {
 };
 
 struct image_provider_opts {
-    std::string data_dir_;
+    std::string data_dir_;                 //!< Path to a dataset.
 
-    std::string resize_method_ = "crop";
-    int height_ = 0;
-    int width_ = 0;
+    std::string resize_method_ = "crop";   //!< Image resize method - 'crop' or 'resize'.
     
-    int num_prefetchers_ = 0;
-    int num_decoders_ = 0;
+    size_t num_prefetchers_ = 0;           //!< Number of prefetch threads (data readers).
+    size_t num_decoders_ = 0;              //!< Number of decoder threads (OpenCV -> std::vector conversion). 
     
-    int prefetch_batch_size_ = 0;
-    int prefetch_queue_size_ = 0;
+    size_t prefetch_batch_size_ = 0;       //!< Same as neural network batch size.
+    size_t prefetch_queue_size_ = 0;       //!< Maximal size of prefetched batches.
+    
+    bool fake_decoder_ = false;            //!< If true, decoder does not decode images but passes inference requests through itself.
+    
+    size_t height_ = 0;                    //!< This is the target image height. Depends on neural network input.
+    size_t width_ = 0;                     //!< This is the target image width. Depends on neural network input.
     
     resize_method get_resize_method() const {
         return resize_method_ == "resize"? resize_method::resize : resize_method::crop;
     }
-    void log() {
-        std::cout << "[image_provider_opts] "
-                  << "data_dir=" << data_dir_ << ", resize_method=" << resize_method_ << ", height=" << height_
-                  << ", width=" << width_ << ", num_prefetchers=" << num_prefetchers_
-                  << ", num_decoders=" << num_decoders_ << ", prefetch_batch_size=" << prefetch_batch_size_
-                  << ", prefetch_queue_size=" << prefetch_queue_size_
-                  << std::endl;
-                  
-    }
 };
+std::ostream &operator<<(std::ostream &os, image_provider_opts const &opts) {
+    os << "[image_provider_opts       ] "
+       << "data_dir=" << opts.data_dir_ << ", resize_method=" << opts.resize_method_ << ", height=" << opts.height_
+       << ", width=" << opts.width_ << ", num_prefetchers=" << opts.num_prefetchers_
+       << ", num_decoders=" << opts.num_decoders_ << ", prefetch_batch_size=" << opts.prefetch_batch_size_
+       << ", prefetch_queue_size=" << opts.prefetch_queue_size_
+       << ", fake_decoder=" << (opts.fake_decoder_ ? "true" : "false");
+    return os;
+}
 
 /**
  * @brief Sharded vector iterates forever over provided chunk. For instance, we can have
@@ -147,11 +154,11 @@ template <typename T>
 class sharded_vector {
 private:
     std::vector<T>* vec_;
-    int first_idx_;
-    int length_;
-    int pos_;
+    size_t first_idx_;
+    size_t length_;
+    size_t pos_;
 public:
-    sharded_vector(std::vector<T>& vec, const int first_idx, const int length)
+    sharded_vector(std::vector<T>& vec, const size_t first_idx, const size_t length)
     : vec_(&vec), first_idx_(first_idx), length_(length), pos_(first_idx_) {
         if (first_idx_ + length_ >= vec_->size()) {
             length_ = vec_->size() - first_idx;
@@ -173,7 +180,7 @@ public:
  */
 struct prefetch_msg {
     std::vector<cv::Mat> images_;
-    const int num_images() const { return images_.size(); }
+    size_t num_images() const { return images_.size(); }
 };
 
 class image_provider : public data_provider {
@@ -188,87 +195,140 @@ private:
     
     thread_safe_queue<prefetch_msg*> prefetch_queue_;
     image_provider_opts opts_;
+    logger_impl& logger_;
 private:
-    static void prefetcher_func(image_provider* myself, const int id) {
+    static void prefetcher_func(image_provider* myself, 
+                                const size_t prefetcher_id, const size_t num_prefetchers) {
         // Find out images I am responsible for.
-        int shard_pos(0), shard_length(0);
-        get_my_shard(myself->file_names_.size(), myself->prefetchers_.size(), id, shard_pos, shard_length);
+        size_t shard_pos(0), shard_length(0);
+        get_my_shard(myself->file_names_.size(), myself->prefetchers_.size(),
+                     prefetcher_id, shard_pos, shard_length);
         sharded_vector<std::string> my_files(myself->file_names_, shard_pos, shard_length);
         prefetch_msg *msg = new prefetch_msg();
+        running_average load, submit;
         try {
+            timer clock;
+            clock.restart();
             while (!myself->stop_) {
                 const auto fname = my_files.next();
                 cv::Mat img = cv::imread(fname);
                 if (img.data == nullptr) {
-                    std::cerr << "Error loading image from file: " << fname << std::endl;
+                    myself->logger_.log_warning("Error loading image from file: " + fname);
                     continue;
                 }
                 msg->images_.push_back(img);
                 if (msg->num_images() >= myself->opts_.prefetch_batch_size_) {
-                    myself->prefetch_queue_.push(msg);
+                    load.update(clock.ms_elapsed());
+                    clock.restart();  myself->prefetch_queue_.push(msg);  submit.update(clock.ms_elapsed());
                     msg = new prefetch_msg();
                 }
             }
         } catch(queue_closed) {
         }
-        std::cout << "prefetcher (reader) " << id << " has shut down" << std::endl;
+        myself->logger_.log_info(fmt(
+            "[prefetcher       %02d/%02d]: [load:%.5f]-->--{submit:%.5f}",
+            prefetcher_id, num_prefetchers, load.value(), submit.value()
+        ));
         delete msg;
     }
     
-    static void decoder_func(image_provider* myself, const int id) {
-        const int height(myself->opts_.height_),
-                  width(myself->opts_.width_);
+    static void decoder_func(image_provider* myself, const int decoder_id, const int num_decoders) {
+        const int height(static_cast<int>(myself->opts_.height_)),
+                  width(static_cast<int>(myself->opts_.width_));
         const resize_method resizem = myself->opts_.get_resize_method();
-        const int image_size = 3 * height * width;
+        const size_t image_size = static_cast<size_t>(3 * height * width);
+        running_average fetch_imgs, fetch_reqs, process, submit;
         try {
+            timer clock;
+            inference_msg *output(nullptr);      // Current inference request.
+            prefetch_msg *input(nullptr  );      // Current non-decoded images.
+            size_t input_cursor(0),              // Current position in input data.
+                   output_cursor(0);             // Current position in output data.
+            float decode_time(0);
+                              
             while(!myself->stop_) {
                 // Get free task from the task pool
-                inference_msg *infer_request = myself->inference_msg_pool_->get();
-                // Get prefetched images
-                prefetch_msg* raw_images = myself->prefetch_queue_.pop();
-                // Crop and convert to float array. The input_ field in task
-                // has the following shape: [BatchSize, NumChannels, Height, Width]
-                // Every image will be [NumChannels, Height, Width] and num_images
-                // below must be exactly BatchSize.
-                const int num_images = raw_images->num_images();
-                for (int i=0; i<num_images; ++i) {
-                    cv::Mat img = raw_images->images_[i];
-                    if (img.rows != height || img.cols != width) {
-                        if (resizem == resize_method::resize || img.rows < height || img.cols < width) {
-                            cv::resize(raw_images->images_[i], img, cv::Size(height, width), 0, 0, cv::INTER_LINEAR);
-                        } else {
-                            img = img(cv::Rect(0, 0, height, width));
-                        }
-                    }
-                    std::copy(
-                        img.begin<float>(),
-                        img.end<float>(),
-                        infer_request->input_.begin() + i*image_size
-                    );
+                if (!output) {
+                    clock.restart();
+                    output = myself->inference_msg_pool_->get();
+                    fetch_reqs.update(clock.ms_elapsed());
+                    output_cursor = 0;
                 }
-                delete raw_images;
-                // Push preprocessed images into the queue
-                myself->request_queue_->push(infer_request);
+                // Get prefetched images
+                if (!input) {
+                    clock.restart();
+                    input = myself->prefetch_queue_.pop();
+                    fetch_imgs.update(clock.ms_elapsed());
+                    input_cursor = 0;
+                }
+                // If output messages is filled with data, send it
+                const auto need_to_decode = output->batch_size() - output_cursor;
+                if (need_to_decode == 0) {
+                    process.update(decode_time);
+                    clock.restart();
+                    myself->request_queue_->push(output);
+                    submit.update(clock.ms_elapsed());
+                    output = nullptr;
+                    decode_time = 0;
+                    continue;
+                }
+                // If there's no data that needs to be decoded, get it.
+                const auto can_decode = input->num_images() - input_cursor;
+                if (can_decode == 0) {
+                    delete input;
+                    input = nullptr;
+                    continue;
+                }
+                // This number of instances I will decode
+                const auto will_decode = std::min(need_to_decode, can_decode);
+                clock.restart();
+                if (!myself->opts_.fake_decoder_) {
+                    for (size_t i=0; i<will_decode; ++i) {
+                        cv::Mat img = input->images_[input_cursor];
+                        if (img.rows != height || img.cols != width) {
+                            if (resizem == resize_method::resize || img.rows < height || img.cols < width) {
+                                cv::resize(input->images_[input_cursor], img, cv::Size(height, width), 0, 0, cv::INTER_LINEAR);
+                            } else {
+                                img = img(cv::Rect(0, 0, height, width));
+                            }
+                        }
+                        std::copy(
+                            img.begin<float>(),
+                            img.end<float>(),
+                            output->input().begin() + static_cast<std::vector<float>::difference_type>(image_size) * static_cast<std::vector<float>::difference_type>(output_cursor)
+                        );
+                        input_cursor ++;
+                        output_cursor ++;
+                    }
+                } else {
+                    input_cursor +=will_decode;
+                    output_cursor +=will_decode;
+                }
+                decode_time += clock.ms_elapsed();
             }
         } catch(queue_closed) {
         }
-        std::cout << "decoder " << id << " has shut down" << std::endl;
+        myself->logger_.log_info(fmt(
+            "[decoder          %02d/%02d]: {fetch_requet:%.5f}-->--{fetch_images:%.5f}-->--[process:%.5f]-->--{submit:%.5f}",
+            decoder_id, num_decoders, fetch_reqs.value(), fetch_imgs.value(), process.value(), submit.value()
+        ));
     }
 public:
     thread_safe_queue<prefetch_msg*>& prefetch_queue() { return prefetch_queue_; }
     
     image_provider(const image_provider_opts& opts, inference_msg_pool* pool,
-                   abstract_queue<inference_msg*>* request_queue) 
-        : data_provider(pool, request_queue), prefetch_queue_(opts.prefetch_queue_size_), opts_(opts) {
+                   abstract_queue<inference_msg*>* request_queue, logger_impl& logger) 
+        : data_provider(pool, request_queue), prefetch_queue_(opts.prefetch_queue_size_),
+          opts_(opts), logger_(logger) {
         opts_.data_dir_ = fs_utils::normalize_path(opts_.data_dir_);
         if (!fs_utils::read_cache(opts_.data_dir_, file_names_)) {
-            std::cout << "[image_provider] read " << file_names_.size() <<  "from file system." << std::endl;
+            logger_.log_info("[image_provider        ]: found " + S(file_names_.size()) +  " image files in file system.");
             fs_utils::get_image_files(opts_.data_dir_, file_names_);
             if (!fs_utils::write_cache(opts_.data_dir_, file_names_)) {
-                std::cerr << "[image_provider] failed to write file cache." << std::endl;
+                logger_.log_warning("[image_provider        ]: failed to write file cache.");
             }
         } else {
-            std::cout << "[image_provider] read " << file_names_.size() <<  "from cache." << std::endl;
+            logger_.log_info("[image_provider        ]: read " + S(file_names_.size()) +  "from cache.");
         }
         fs_utils::to_absolute_paths(opts_.data_dir_, file_names_);
         prefetchers_.resize(opts_.num_prefetchers_, nullptr);
@@ -276,9 +336,9 @@ public:
     }
     
     virtual ~image_provider() {
-        for (int i=0; i<prefetchers_.size(); ++i)
+        for (size_t i=0; i<prefetchers_.size(); ++i)
             if (prefetchers_[i]) delete prefetchers_[i];
-        for (int i=0; i<decoders_.size(); ++i)
+        for (size_t i=0; i<decoders_.size(); ++i)
             if (decoders_[i]) delete decoders_[i];
     }
     
@@ -289,13 +349,11 @@ public:
     
     void run() override {
         // Run prefetch workers
-        const int num_prefetchers = prefetchers_.size();
-        for (int i=0; i<num_prefetchers; ++i) {
-            prefetchers_[i] = new std::thread(&(image_provider::prefetcher_func), this, i);
+        for (size_t i=0; i<prefetchers_.size(); ++i) {
+            prefetchers_[i] = new std::thread(&(image_provider::prefetcher_func), this, i, prefetchers_.size());
         }
-        const int num_decoders = decoders_.size();
-        for (int i=0; i<num_decoders; ++i) {
-            decoders_[i] = new std::thread(&(image_provider::decoder_func), this, i);
+        for (size_t i=0; i<decoders_.size(); ++i) {
+            decoders_[i] = new std::thread(&(image_provider::decoder_func), this, i, decoders_.size());
         }
         // Wait
         for (auto& prefetcher : prefetchers_)
@@ -305,21 +363,31 @@ public:
         // Clean prefetch queue
         std::vector<prefetch_msg*> queue_content;
         prefetch_queue_.empty_queue(queue_content);
-        for (int i=0; i<queue_content.size(); ++i)
+        for (size_t i=0; i<queue_content.size(); ++i)
             delete queue_content[i];
     }
     
     };
 namespace tests {
     namespace image_provider_tests {
+        void benchmark_prefetch_readers();
+        void benchmark_data_provider();
+        float benchmark_crop(cv::Mat& img, const cv::Rect& crop_region=cv::Rect(10, 10, 256, 256), const int niters=100);
+        float benchmark_resize(cv::Mat& img, const cv::Size& new_size=cv::Size(256, 256), const int niters=100);
+        float benchmark_tovector(cv::Mat& img, const int niters=40000);
+        float benchmark_tofloatmat(cv::Mat& img, const int niters=100);
+        void read_image();
+        
+        
         void benchmark_prefetch_readers() {
+            logger_impl logger;
             image_provider_opts opts;
             opts.data_dir_ = "/home/serebrya/data/";
             opts.num_prefetchers_ = 4;
             opts.num_decoders_ = 1;
             opts.prefetch_batch_size_=64;
             opts.prefetch_queue_size_=32;
-            image_provider provider(opts, nullptr, nullptr);
+            image_provider provider(opts, nullptr, nullptr, logger);
             provider.start();
             // N warmup iterations
             std::cout << "Running warmup iterations" << std::endl;
@@ -330,7 +398,7 @@ namespace tests {
             // N benchmark iterations
             std::cout << "Running benchmark iterations" << std::endl;
             timer t;
-            int num_images(0);
+            size_t num_images(0);
             for (int i=0; i<100; ++i) {
                 prefetch_msg *imgs = provider.prefetch_queue().pop();
                 num_images += imgs->num_images();
@@ -343,6 +411,7 @@ namespace tests {
             provider.join();
         }
         void benchmark_data_provider() {
+            logger_impl logger;
             image_provider_opts opts;
             opts.data_dir_ = "/home/serebrya/data/";
             opts.resize_method_ = "crop";
@@ -352,10 +421,10 @@ namespace tests {
             opts.prefetch_queue_size_=64;
             opts.height_ = opts.width_ = 225;
             
-            inference_msg_pool pool(10, opts.prefetch_batch_size_*3*opts.height_*opts.width_, 100);
+            inference_msg_pool pool(10, opts.prefetch_batch_size_, opts.prefetch_batch_size_*3*opts.height_*opts.width_, 100);
             thread_safe_queue<inference_msg*> request_queue;
                    
-            image_provider provider(opts, &pool, &request_queue);
+            image_provider provider(opts, &pool, &request_queue, logger);
             provider.start();
             // N warmup iterations
             std::cout << "Running warmup iterations" << std::endl;
@@ -366,7 +435,7 @@ namespace tests {
             // N benchmark iterations
             std::cout << "Running benchmark iterations" << std::endl;
             timer t;
-            int num_images(0);
+            size_t num_images(0);
             for (int i=0; i<100; ++i) {
                 inference_msg *imgs = request_queue.pop();
                 pool.release(imgs);
@@ -385,34 +454,36 @@ namespace tests {
          *  Tovector [3, 256, 256] -> [3*256*256]   is ~ 0.16 ms with crop first
          *  Tovector [3, 256, 256] -> [3*256*256]   is ~ 0.15 ms with resize first
          */
-        float benchmark_crop(cv::Mat& img, const cv::Rect& crop_region=cv::Rect(10, 10, 256, 256), const int niters=1000000) {
+        float benchmark_crop(cv::Mat& img, const cv::Rect& crop_region, const int niters) {
             timer start;
             for (int i=0; i<niters; ++i)
                 cv::Mat cropped = img(crop_region);
             return start.ms_elapsed() / niters;
         }
-        float benchmark_resize(cv::Mat& img, const cv::Size& new_size=cv::Size(256, 256), const int niters=100000) {
+        float benchmark_resize(cv::Mat& img, const cv::Size& new_size, const int niters) {
             cv::Mat resized;
             timer start;
             for (int i=0; i<niters; ++i)
                 cv::resize(img, resized, new_size, 0, 0, cv::INTER_LINEAR);
             return start.ms_elapsed() / niters;
         }
-        float benchmark_tovector(cv::Mat& img, const int niters=400000) {
+        __attribute__((noinline))
+        float benchmark_tovector(cv::Mat& img, const int niters) {
+            
             cv::Mat sized;
-            if (true) {
-                sized = img(cv::Rect(10, 10, 256, 256));
-            } else {
-                cv::resize(img, sized, cv::Size(256,256), 0, 0, cv::INTER_LINEAR);
-            }
+            sized = img(cv::Rect(10, 10, 256, 256));
+            //cv::resize(img, sized, cv::Size(256,256), 0, 0, cv::INTER_LINEAR);
                 
-            std::vector<float> vec(sized.channels()*sized.rows*sized.cols);
+            std::vector<float> vec(static_cast<size_t>(sized.channels()*sized.rows*sized.cols));
             timer start;
-            for (int i=0; i<niters; ++i)
+            for (int i=0; i<niters; ++i) {
                 vec.assign(sized.begin<float>(), sized.end<float>());
+            }
             return start.ms_elapsed() / niters;
+            
+            //return 0.0;
         }
-        float benchmark_tofloatmat(cv::Mat& img, const int niters=100000) {
+        float benchmark_tofloatmat(cv::Mat& img, const int niters) {
             /*
             cv::Mat cropped = img(cv::Rect(10, 10, 256, 256));
             cv::resize(img, cropped, new_size, 0, 0, cv::INTER_LINEAR);
@@ -444,8 +515,6 @@ namespace tests {
             // Convert to float matrix
             //const auto mean_tofloatmat_time = benchmark_tofloatmat(img);
             //std::cout << "Average tofloatmat time is " << mean_tofloatmat_time << " ms" << std::endl;
-        }
-        void raw_img_data_provider_test() {
         }
     }
 }

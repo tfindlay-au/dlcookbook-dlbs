@@ -25,6 +25,28 @@
 #include <dirent.h>
 #include <sys/stat.h>
 
+void fill_random(std::vector<float>& vec);
+void get_my_shard(const size_t length, const size_t num_shards, const size_t my_shard,
+                  size_t& shard_pos, size_t &shard_length);
+size_t get_tensor_size(const ITensor* tensor);
+size_t get_binding_size(ICudaEngine* engine, const int idx);
+
+template<typename T>
+std::string S(const T& t) { return std::to_string(t); }
+
+/**
+ * https://stackoverflow.com/a/26221725/575749
+ * http://www.cplusplus.com/reference/cstdio/snprintf/
+ */
+template<typename ... Args>
+std::string fmt(const std::string& format, Args ... args) {
+    size_t size = std::snprintf(nullptr, 0, format.c_str(), args ...) + 1; // Extra space for '\0'
+    std::unique_ptr<char[]> buf(new char[ size ]); 
+    std::snprintf(buf.get(), size, format.c_str(), args ...);
+    return std::string(buf.get(), buf.get() + size - 1);                   // We don't want the '\0' inside
+}
+
+
 // Check CUDA result.
 #define cudaCheck(ans) { cudaCheckf((ans), __FILE__, __LINE__); }
 inline void cudaCheckf(const cudaError_t code, const char *file, const int line, const bool abort=true) {
@@ -60,7 +82,7 @@ public:
     static std::string normalize_path(std::string dir) {
         const auto pos = dir.find_last_not_of("/");
         if (pos != std::string::npos && pos + 1 < dir.size())
-            dir.erase(dir.begin() + pos + 1, dir.end());
+            dir = dir.substr(0, pos + 1);
         dir += "/";
         return dir;
     }
@@ -76,6 +98,7 @@ public:
         std::string fname;
         while (std::getline(fstream, fname))
             fnames.push_back(fname);
+        return true;
     }
     /**
      * @brief Writes a cache with file names if that cache does not exist.
@@ -103,9 +126,8 @@ public:
      * @param files Image files with relative file paths.
      */
     static void to_absolute_paths(const std::string& dir, std::vector<std::string>& fnames) {
-        const int num_fnames = fnames.size();
-        for (int i=0; i<num_fnames; ++i) {
-            fnames[i] = dir + fnames[i];
+        for (auto& fname : fnames) {
+            fname = dir + fname;
         }
     }
     /**
@@ -162,13 +184,8 @@ public:
 };
 
 
-
-
-
-
-
-void get_my_shard(const int length, const int num_shards, const int my_shard,
-                  int& shard_pos, int &shard_length) {
+void get_my_shard(const size_t length, const size_t num_shards, const size_t my_shard,
+                  size_t& shard_pos, size_t &shard_length) {
     shard_length =  length / num_shards;
     shard_pos = shard_length * my_shard;
     if (my_shard == num_shards - 1 && shard_length*num_shards != length) {
@@ -181,18 +198,18 @@ void get_my_shard(const int length, const int num_shards, const int my_shard,
  * @param tensor A pointer to a tensor object.
  * @return Number of elements in \p tensor.
  */
-long get_tensor_size(const ITensor* tensor) {
+size_t get_tensor_size(const ITensor* tensor) {
   #if NV_TENSORRT_MAJOR >= 3
   Dims shape = tensor->getDimensions();
   long sz = 1;
   for (int i=0; i<shape.nbDims; ++i) {
     sz *= shape.d[i];
   }
-  return sz;
+  return static_cast<size_t>(sz);
 #else
   // Legacy TensorRT returns Dims3 object
   Dims3 shape = tensor->getDimensions();
-  return long(shape.c) * shape.w * shape.h
+  return long(shape.c) * shape.w * shape.h;
 #endif
 }
 
@@ -204,14 +221,14 @@ long get_tensor_size(const ITensor* tensor) {
  * @return Number of elements in tensor.
  */
 // Get number of elements in this tensor (blob).
-int get_binding_size(ICudaEngine* engine, const int idx) {
+size_t get_binding_size(ICudaEngine* engine, const int idx) {
 #if NV_TENSORRT_MAJOR >= 3
   const Dims shape = engine->getBindingDimensions(idx);
   long sz = 1;
   for (int i=0; i<shape.nbDims; ++i) {
     sz *= shape.d[i];
   }
-  return sz;
+  return static_cast<size_t>(sz);
 #else
   // Legacy TensorRT returns Dims3 object
   const Dims3 dims = engine->getBindingDimensions(idx);
@@ -263,14 +280,14 @@ private:
   
   int iter_idx_;       //!< Index when current iteration has started. Used when user requested intermidiate output.
   
-  int num_batches_;    //!< In case we need to reset the state,
+  size_t num_batches_; //!< In case we need to reset the state,
 public:
     /**
      * @brief Initializes time tracker.
      * @param num_batches Number of input data instances associated with
      * each element in time_tracker#batch_times_ and time_tracker#infer_times_.
      */
-    time_tracker(const int num_batches) : num_batches_(num_batches) {
+    explicit time_tracker(const size_t num_batches) : num_batches_(num_batches) {
         reset();
     }
     
@@ -297,35 +314,52 @@ public:
 };
 
 /**
+ * @brief Estimating average based on input stream without storign complete history.
+ */
+class running_average {
+private:
+    size_t i_ = 1;
+    double average_ = 0;
+public:
+    void update(const float val) {
+        average_ = average_ + (static_cast<double>(val) - average_) / i_;
+        i_ ++;
+    }
+    double value() const { return average_; }
+    size_t num_steps() const { return i_-1; }
+};
+
+/**
  * @brief The profiler, if enabled by a user, profiles execution times of 
  * individual layers.
  */
-struct tensorrt_profiler : public IProfiler {
-  typedef std::pair<std::string, float> Record;
-  std::vector<Record> mProfile;
+class profiler_impl : public IProfiler {
+private:
+    typedef std::pair<std::string, float> Record;
+    std::vector<Record> mProfile;
 
-  void reset() { 
-    mProfile.clear();
-  }
+public:
+    void reset() { 
+        mProfile.clear();
+    }
   
-  virtual void reportLayerTime(const char* layerName, float ms) {
-    auto record = std::find_if(mProfile.begin(), mProfile.end(), [&](const Record& r){ return r.first == layerName; });
-    if (record == mProfile.end()) {
-      mProfile.push_back(std::make_pair(layerName, ms));
-    } else {
-      record->second += ms;
+    virtual void reportLayerTime(const char* layerName, float ms) {
+        auto record = std::find_if(mProfile.begin(), mProfile.end(), [&](const Record& r){ return r.first == layerName; });
+        if (record == mProfile.end()) {
+            mProfile.push_back(std::make_pair(layerName, ms));
+        } else {
+            record->second += ms;
+        }
     }
-  }
 
-  void printLayerTimes(const int num_iterations) {
-    float totalTime = 0;
-    for (size_t i = 0; i < mProfile.size(); i++) {
-      printf("%-40.40s %4.3fms\n", mProfile[i].first.c_str(), mProfile[i].second / num_iterations);
-      totalTime += mProfile[i].second;
+    void printLayerTimes(const int num_iterations) {
+        float totalTime = 0;
+        for (size_t i = 0; i < mProfile.size(); i++) {
+            printf("%-40.40s %4.3fms\n", mProfile[i].first.c_str(), mProfile[i].second / num_iterations);
+            totalTime += mProfile[i].second;
+        }
+        printf("Time over all layers: %4.3f\n", totalTime / num_iterations);
     }
-    printf("Time over all layers: %4.3f\n", totalTime / num_iterations);
-  }
-
 };
 
 #endif

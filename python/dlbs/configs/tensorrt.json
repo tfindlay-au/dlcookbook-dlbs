@@ -61,10 +61,33 @@
       "type": "int",
       "desc": "Maximal number of batches of images in a queue of loaded but non-decoded images."
     },
+    "tensorrt.prefetch_batch_size": {
+      "val": "${exp.replica_batch}",
+      "type": "int",
+      "desc": "Size of a prefetch batch."
+    },
     "tensorrt.inference_queue_size": {
       "val": "$(${exp.num_gpus} * 3)$",
       "type": "int",
       "desc": "Number of pre-allocated inference requests."
+    },
+    "tensorrt.fake_decoder": {
+      "val": false,
+      "type": "bool",
+      "desc": [
+        "If set, fake decoder will be used. Fake decoder is a decoder that does not decode JPEG images into",
+        "different representation, but just passes through itself inference requests. This option is useful",
+        "to benchmark prefetchers and/or storage."
+      ]
+    },
+    "tensorrt.fake_inference": {
+      "val": false,
+      "type": "bool",
+      "desc": [
+        "If set, fake inference engine will be used. Fake engine is an engine that does not perform inference.",
+        "It just fetches requests and pushes them immidiiately into response queue. This option is useful",
+        "to benchmark ingestion pipeline and/or storage."
+      ]
     },
     "tensorrt.args": {
       "val": [
@@ -86,7 +109,10 @@
         "--num_prefetchers ${tensorrt.num_prefetchers}",
         "--num_decoders ${tensorrt.num_decoders}",
         "--prefetch_queue_size ${tensorrt.prefetch_queue_size}",
-        "--inference_queue_size ${tensorrt.inference_queue_size}"
+        "--prefetch_batch_size ${tensorrt.prefetch_batch_size}",
+        "--inference_queue_size ${tensorrt.inference_queue_size}",
+        "$('--fake_decoder' if ${tensorrt.fake_decoder} else '')$",
+        "$('--fake_inference' if ${tensorrt.fake_inference} else '')$"
       ],
       "type": "str",
       "desc": "Command line arguments that launcher uses to launch TensorRT."

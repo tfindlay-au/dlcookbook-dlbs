@@ -69,7 +69,7 @@ private:
     T item_;
     bool emptied_ = false;
 public:
-    infinite_queue(const T& item) {
+    explicit infinite_queue(const T& item) {
         closed_ = false;
         item_ = item;
     }
@@ -109,9 +109,9 @@ private:
     using abstract_queue<T>::push_evnt_;
     using abstract_queue<T>::pop_evnt_;
     std::queue<T> queue_;
-    int max_size_;
+    size_t max_size_;
 public:
-    thread_safe_queue(const int max_size=0) : max_size_(max_size) {
+    explicit thread_safe_queue(const size_t max_size=0) : max_size_(max_size) {
         closed_ = false;
     }
     thread_safe_queue(const thread_safe_queue& q) = delete;
@@ -172,6 +172,11 @@ public:
 
 namespace tests {
     namespace queue_tests {
+        void consumer(abstract_queue<int>* queue, long& counter);
+        void provider(abstract_queue<int>* queue, long& counter);
+        void test_infinite_queue();
+        
+        
         void consumer(abstract_queue<int>* queue, long& counter) {
             try {
                 while (true) {
