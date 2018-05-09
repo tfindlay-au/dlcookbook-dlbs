@@ -373,10 +373,11 @@ public:
         const int num_engines = static_cast<int>(opts.gpus_.size());
         for (size_t i=0; i<opts.gpus_.size(); ++i) {
             inference_engine *engine = nullptr;
+            const auto gpu_id = opts.gpus_[i];
             if (opts.fake_inference_) {
-                engine = new fake_inference_engine(static_cast<int>(i), num_engines, logger, opts);
+                engine = new fake_inference_engine(static_cast<int>(gpu_id), num_engines, logger, opts);
             } else {
-                engine = new tensorrt_inference_engine(static_cast<int>(i), num_engines, logger, opts);
+                engine = new tensorrt_inference_engine(static_cast<int>(gpu_id), num_engines, logger, opts);
             }
             engines_.push_back(engine);
         }

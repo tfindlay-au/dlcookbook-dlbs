@@ -12,12 +12,12 @@ loglevel=warning
 rm -rf ./logs/synthetic
 python $dlbs run \
        --log-level=$loglevel\
-       -Vexp.gpus='["0"]'\
+       -Vexp.gpus='["0", "0,1", "0,1,2,3", "0,1,2,3,4,5,6,7"]'\
        -Vexp.model='["alexnet_owt"]'\
-       -Pexp.replica_batch=128\
+       -Pexp.replica_batch=512\
        -Pexp.num_warmup_batches=50\
-       -Pexp.num_batches=200\
-       -Ptensorrt.inference_queue_size=24\
+       -Pexp.num_batches=300\
+       -Ptensorrt.inference_queue_size=32\
        -Pexp.log_file='"${BENCH_ROOT}/logs/synthetic/${exp.model}_${exp.num_gpus}.log"'\
        -Pexp.phase='"inference"'\
        -Pexp.docker=true\

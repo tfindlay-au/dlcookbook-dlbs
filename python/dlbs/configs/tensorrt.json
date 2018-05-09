@@ -7,8 +7,7 @@
     },
     "tensorrt.env": {
       "val": [
-        "${runtime.EXPORT_CUDA_CACHE_PATH}",
-        "${runtime.EXPORT_CUDA_VISIBLE_DEVICES}"
+        "${runtime.EXPORT_CUDA_CACHE_PATH}"
       ],
       "type": "str",
       "desc": "Environmental variables to set for TensorRT benchmarks."
@@ -195,8 +194,7 @@
       "parameters": { "tensorrt.env": [
         "PATH=$('${tensorrt.host_path}:\\$PATH'.strip(' \t:'))$",
         "LD_LIBRARY_PATH=$('${tensorrt.host_libpath}:\\$LD_LIBRARY_PATH'.strip(' \t:'))$",
-        "${runtime.EXPORT_CUDA_CACHE_PATH}",
-        "${runtime.EXPORT_CUDA_VISIBLE_DEVICES}"
+        "${runtime.EXPORT_CUDA_CACHE_PATH}"
       ]}
     }
   ]
