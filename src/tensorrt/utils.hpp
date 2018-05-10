@@ -23,6 +23,8 @@
 #include <fstream>
 #include <algorithm>
 #include <dirent.h>
+#include <cstring>
+#include <sys/types.h>
 #include <sys/stat.h>
 
 void fill_random(std::vector<float>& vec);
@@ -73,6 +75,13 @@ void fill_random(std::vector<float>& vec) {
  * working with raw image datasets.
  */
 class fs_utils {
+private:
+    /**
+     * @brief Return human readeable 'errno' description.
+     */
+    static std::string get_errno() {
+        return std::string(strerror(errno));
+    }
 public:
     /**
      * @brief Makes sure that a path 'dir', which is supposed to by a directory,
@@ -142,8 +151,12 @@ public:
     static void get_image_files(std::string dir, std::vector<std::string>& files, std::string subdir="") {
         // Check that directory exists
         struct stat sb;
-        if (!(stat(dir.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode))) {
-            std::cerr << "[get_image_files       ]: skipping path ('" << dir << "') - cannot access or not a directory" << std::endl;
+        if (stat(dir.c_str(), &sb) != 0) {
+            std::cerr << "[get_image_files       ]: skipping path ('" << dir << "') - cannot stat directory (reason: " << get_errno() << ")" << std::endl;
+            return;
+        }
+        if (!S_ISDIR(sb.st_mode)) {
+            std::cerr << "[get_image_files       ]: skipping path ('" << dir << "') - not a directory" << std::endl;
             return;
         }
         // Scan this directory for files and other directories
