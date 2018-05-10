@@ -115,7 +115,8 @@ int main(int argc, char **argv) {
     const size_t num_engines = engine.num_engines();
     // Create pool of available task request objects. These objects (infer_task) will be initialized
     // to store input/output tensors so there will be no need to do memory allocations during benchmark.
-    logger.log_info("[main                  ]: Creating inference message pool with " + S(engine_opts.inference_queue_size_) + " messages");
+    const float est_mp_mem = static_cast<float>(engine_opts.inference_queue_size_*(8+4+4+4+engine.input_size()*4+engine.output_size()*4)) / (1024*1024);
+    logger.log_info("[main                  ]: Creating inference message pool with " + S(engine_opts.inference_queue_size_) + " messages, estimated memory is " + std::to_string(est_mp_mem) + " mb.");
     inference_msg_pool infer_msg_pool(engine_opts.inference_queue_size_, engine.batch_size(), engine.input_size(), engine.output_size(), true);
     // Create data provider. The data provider will spawn at least one thread. It will fetch free task objects
     // from pool of task objects, will populate them with data and will submit tasks to data queue. All

@@ -142,8 +142,10 @@ public:
     static void get_image_files(std::string dir, std::vector<std::string>& files, std::string subdir="") {
         // Check that directory exists
         struct stat sb;
-        if (!(stat(dir.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode)))
+        if (!(stat(dir.c_str(), &sb) == 0 && S_ISDIR(sb.st_mode))) {
+            std::cerr << "[get_image_files       ]: skipping path ('" << dir << "') - cannot access or not a directory" << std::endl;
             return;
+        }
         // Scan this directory for files and other directories
         const std::string abs_path = dir + subdir;
         DIR *dir_handle = opendir(abs_path.c_str());

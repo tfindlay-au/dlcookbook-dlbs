@@ -324,11 +324,19 @@ public:
         if (!fs_utils::read_cache(opts_.data_dir_, file_names_)) {
             logger_.log_info("[image_provider        ]: found " + S(file_names_.size()) +  " image files in file system.");
             fs_utils::get_image_files(opts_.data_dir_, file_names_);
-            if (!fs_utils::write_cache(opts_.data_dir_, file_names_)) {
-                logger_.log_warning("[image_provider        ]: failed to write file cache.");
+            if (!file_names_.empty()) {
+                if (!fs_utils::write_cache(opts_.data_dir_, file_names_)) {
+                     logger_.log_warning("[image_provider        ]: failed to write file cache.");
+                }
             }
         } else {
-            logger_.log_info("[image_provider        ]: read " + S(file_names_.size()) +  "from cache.");
+            logger_.log_info("[image_provider        ]: read " + S(file_names_.size()) +  " from cache.");
+            if (file_names_.empty()) { 
+                logger_.log_warning("[image_provider        ]: found empty cache file. Please, delete it and restart DLBS. ");
+            }
+        }
+        if (file_names_.empty()) {
+            logger_.log_error("[image_provider        ]: no input data found, exiting.");
         }
         fs_utils::to_absolute_paths(opts_.data_dir_, file_names_);
         prefetchers_.resize(opts_.num_prefetchers_, nullptr);
