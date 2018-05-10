@@ -84,6 +84,36 @@ private:
     }
 public:
     /**
+     */
+    static std::string parent_dir(std::string dir) {
+        if (dir.empty())
+            return "";
+        dir = normalize_path(dir);
+        dir = dir.erase(dir.size() - 1);
+        const auto pos = dir.find_last_of("/");
+        if(pos == std::string::npos)
+            return "";
+        return dir.substr(0, pos);
+    }
+    /**
+     */
+    static int mk_dir(std::string dir, const mode_t mode=0700) {
+        struct stat sb;
+        if (stat(dir.c_str(), &sb) != 0 ) {
+            // Path does not exist
+            const int ret = mk_dir(parent_dir(dir), mode);
+            if(ret < 0)
+                return ret;
+            return mkdir(dir.c_str(), mode);
+        }
+        if (!S_ISDIR(sb.st_mode)) {
+            // Path exists and is not a directory
+            return -1;
+        }
+        // Path exists and is a directory.
+        return 0;
+    }
+    /**
      * @brief Makes sure that a path 'dir', which is supposed to by a directory,
      * ends with one forward slash '/'
      * @param dir A directory name.
@@ -195,6 +225,28 @@ public:
             }
         }
         closedir(dir_handle);
+    }
+    
+    static void initialize_dataset(std::string& data_dir, std::vector<std::string>& files) {
+        data_dir = fs_utils::normalize_path(data_dir);
+        if (!fs_utils::read_cache(data_dir, files)) {
+            std::cout << "[image_provider        ]: found " + S(files.size()) +  " image files in file system." << std::endl;
+            fs_utils::get_image_files(data_dir, files);
+            if (!files.empty()) {
+                if (!fs_utils::write_cache(data_dir, files)) {
+                     std::cout << "[image_provider        ]: failed to write file cache." << std::endl;
+                }
+            }
+        } else {
+            std::cout << "[image_provider        ]: read " + S(files.size()) +  " from cache." << std::endl;
+            if (files.empty()) { 
+                std::cout << "[image_provider        ]: found empty cache file. Please, delete it and restart DLBS. " << std::endl;
+            }
+        }
+        if (files.empty()) {
+            std::cout << "[image_provider        ]: no input data found, exiting." << std::endl;
+        }
+        fs_utils::to_absolute_paths(data_dir, files);
     }
 };
 

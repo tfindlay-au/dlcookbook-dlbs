@@ -131,6 +131,8 @@ struct image_provider_opts {
     size_t height_ = 0;                    //!< This is the target image height. Depends on neural network input.
     size_t width_ = 0;                     //!< This is the target image width. Depends on neural network input.
     
+    std::string data_name_ = "images";     //!< Type of input dataset: 'images' for raw images and 'tensors' for preprocesed tensors.
+    
     resize_method get_resize_method() const {
         return resize_method_ == "resize"? resize_method::resize : resize_method::crop;
     }
@@ -141,7 +143,8 @@ std::ostream &operator<<(std::ostream &os, image_provider_opts const &opts) {
        << ", width=" << opts.width_ << ", num_prefetchers=" << opts.num_prefetchers_
        << ", num_decoders=" << opts.num_decoders_ << ", prefetch_batch_size=" << opts.prefetch_batch_size_
        << ", prefetch_queue_size=" << opts.prefetch_queue_size_
-       << ", fake_decoder=" << (opts.fake_decoder_ ? "true" : "false");
+       << ", fake_decoder=" << (opts.fake_decoder_ ? "true" : "false")
+       << ", data_name=" << opts.data_name_;
     return os;
 }
 
@@ -320,25 +323,7 @@ public:
                    abstract_queue<inference_msg*>* request_queue, logger_impl& logger) 
         : data_provider(pool, request_queue), prefetch_queue_(opts.prefetch_queue_size_),
           opts_(opts), logger_(logger) {
-        opts_.data_dir_ = fs_utils::normalize_path(opts_.data_dir_);
-        if (!fs_utils::read_cache(opts_.data_dir_, file_names_)) {
-            logger_.log_info("[image_provider        ]: found " + S(file_names_.size()) +  " image files in file system.");
-            fs_utils::get_image_files(opts_.data_dir_, file_names_);
-            if (!file_names_.empty()) {
-                if (!fs_utils::write_cache(opts_.data_dir_, file_names_)) {
-                     logger_.log_warning("[image_provider        ]: failed to write file cache.");
-                }
-            }
-        } else {
-            logger_.log_info("[image_provider        ]: read " + S(file_names_.size()) +  " from cache.");
-            if (file_names_.empty()) { 
-                logger_.log_warning("[image_provider        ]: found empty cache file. Please, delete it and restart DLBS. ");
-            }
-        }
-        if (file_names_.empty()) {
-            logger_.log_error("[image_provider        ]: no input data found, exiting.");
-        }
-        fs_utils::to_absolute_paths(opts_.data_dir_, file_names_);
+        fs_utils::initialize_dataset(opts_.data_dir_, file_names_);
         prefetchers_.resize(opts_.num_prefetchers_, nullptr);
         decoders_.resize(opts_.num_decoders_, nullptr);
     }
@@ -375,7 +360,156 @@ public:
             delete queue_content[i];
     }
     
-    };
+};
+
+
+class fast_data_provider : public data_provider {
+private:
+    using data_provider::inference_msg_pool_;
+    using data_provider::request_queue_;
+    using data_provider::stop_;
+    
+    std::vector<std::string> file_names_;
+    std::vector<std::thread*> prefetchers_;
+    image_provider_opts opts_;
+    logger_impl& logger_;
+private:
+    /**
+     * @brief A reference implementation for a "fast" image provider dataset.
+     */
+    static void prefetcher_func(fast_data_provider* myself, 
+                                const size_t prefetcher_id, const size_t num_prefetchers) {
+        // Find out images I am responsible for.
+        size_t shard_pos(0), shard_length(0);
+        get_my_shard(myself->file_names_.size(), myself->prefetchers_.size(),
+                     prefetcher_id, shard_pos, shard_length);
+        sharded_vector<std::string> my_files(myself->file_names_, shard_pos, shard_length);
+        
+        const int height(static_cast<int>(myself->opts_.height_)),
+                  width(static_cast<int>(myself->opts_.width_));
+        const size_t img_size = 3 * height * width;
+        running_average fetch, load, submit;
+        inference_msg *output(nullptr);
+        try {
+            timer clock;
+            clock.restart();
+            while (!myself->stop_) {
+                // Get inference request
+                clock.restart();
+                output = myself->inference_msg_pool_->get();
+                fetch.update(clock.ms_elapsed());
+                for (size_t i=0; i<output->batch_size(); ++i) {
+                    const auto fname = my_files.next();
+                    int img_nchannels(0), img_width(0), img_height(0);
+                    
+                    std::ifstream in(fname.c_str());
+                    in.read((char*)&img_nchannels, sizeof(int));
+                    in.read((char*)&img_width, sizeof(int));
+                    in.read((char*)&img_height, sizeof(int));
+                    if (img_nchannels != 3 || img_width != width || img_height != height) {
+                        myself->logger_.log_error(fmt(
+                            "[prefetcher       %02d/%02d]: invalid image dimensions, epxecting (3, %d, %d), received (3, %d, %d)",
+                            prefetcher_id, num_prefetchers, width, height, img_width, img_height
+                            
+                        ));
+                    }
+                    in.read((char*)(output->input().data()+img_size*i), sizeof(float)*img_size);
+                }
+                // Submit inference request
+                clock.restart();  myself->request_queue_->push(output);  submit.update(clock.ms_elapsed());
+            }
+        } catch(queue_closed) {
+        }
+        myself->logger_.log_info(fmt(
+            "[prefetcher       %02d/%02d]: {fetch:%.5f}-->--[load:%.5f]-->--{submit:%.5f}",
+            prefetcher_id, num_prefetchers, fetch.value(), load.value(), submit.value()
+        ));
+    }
+public:
+    fast_data_provider(const image_provider_opts& opts, inference_msg_pool* pool,
+                       abstract_queue<inference_msg*>* request_queue, logger_impl& logger) : data_provider(pool, request_queue),
+                                                                                             opts_(opts), logger_(logger) {
+        fs_utils::initialize_dataset(opts_.data_dir_, file_names_);
+        prefetchers_.resize(opts_.num_prefetchers_, nullptr);
+    }
+    
+    void run() override {
+        // Run prefetch workers
+        for (size_t i=0; i<prefetchers_.size(); ++i) {
+            prefetchers_[i] = new std::thread(&(fast_data_provider::prefetcher_func), this, i, prefetchers_.size());
+        }
+        // Wait
+        for (auto& prefetcher : prefetchers_)
+            if (prefetcher->joinable()) prefetcher->join();
+    }
+    
+    static void create_dataset(std::string input_data_dir, std::string output_data_dir) {
+        // Target dimensions
+        const int nchannels(3), width(227), height(227);
+        // Get list of input files
+        input_data_dir = fs_utils::normalize_path(input_data_dir);
+        std::vector<std::string> file_names;
+        fs_utils::get_image_files(input_data_dir, file_names);
+
+        // Convert and write
+        output_data_dir = fs_utils::normalize_path(output_data_dir);
+        std::vector<float> tensor(nchannels * width * height);
+        for (int i=0; i<1000; ++i) {
+            cv::Mat img = cv::imread(input_data_dir + file_names[i]);
+            cv::resize(img, img, cv::Size(width, height), 0, 0, cv::INTER_LINEAR);
+            
+            tensor.assign(img.begin<float>(), img.end<float>());
+            const std::string output_file_name = output_data_dir + file_names[i];
+            fs_utils::mk_dir(fs_utils::parent_dir(output_file_name));
+
+            std::ofstream out(output_file_name.c_str());
+            if (!out)
+                throw std::runtime_error("Cannot write file: " + output_file_name);
+
+            out.write((const char*)&nchannels, sizeof(int));
+            out.write((const char*)&width, sizeof(int));
+            out.write((const char*)&height, sizeof(int));
+            out.write((const char*)tensor.data(), tensor.size()*sizeof(float));
+        }
+    }
+    
+    static void benchmark() {
+        logger_impl logger;
+        image_provider_opts opts;
+        opts.data_dir_ = "/home/serebrya/data/fast";
+        //opts.data_dir_ = "/dev/shm/fast";
+        opts.num_prefetchers_ = 4;
+        opts.prefetch_batch_size_=512;
+        opts.height_ = 227;
+        opts.width_ = 227;
+        
+        inference_msg_pool pool(10, opts.prefetch_batch_size_, opts.prefetch_batch_size_*3*227*227, opts.prefetch_batch_size_*1000);
+        thread_safe_queue<inference_msg*> request_queue;
+        fast_data_provider provider(opts, &pool, &request_queue, logger);
+        
+        provider.start();
+        // N warmup iterations
+        std::cout << "Running warmup iterations" << std::endl;
+        for (int i=0; i<50; ++i) {
+            pool.release(request_queue.pop());
+        }
+        // N benchmark iterations
+        std::cout << "Running benchmark iterations" << std::endl;
+        timer t;
+        size_t num_images(0);
+        for (int i=0; i<1000; ++i) {
+            inference_msg* msg = request_queue.pop();
+            num_images += msg->batch_size();
+            pool.release(msg);
+        }
+        const float throughput = 1000.0 * num_images / t.ms_elapsed();
+        provider.stop();
+        std::cout << "num_readers=" << opts.num_prefetchers_ << ", throughput=" << throughput << std::endl;
+            
+        provider.join();
+    }
+};
+
 namespace tests {
     namespace image_provider_tests {
         void benchmark_prefetch_readers();
@@ -385,6 +519,7 @@ namespace tests {
         float benchmark_tovector(cv::Mat& img, const int niters=40000);
         float benchmark_tofloatmat(cv::Mat& img, const int niters=100);
         void read_image();
+        void test_scan_dir();
         
         
         void benchmark_prefetch_readers() {
@@ -523,6 +658,65 @@ namespace tests {
             // Convert to float matrix
             //const auto mean_tofloatmat_time = benchmark_tofloatmat(img);
             //std::cout << "Average tofloatmat time is " << mean_tofloatmat_time << " ms" << std::endl;
+        }
+        //
+        /**
+         * On my dev box, the throughput is 389 images/sec
+         */
+        void test_read_speed() {
+            std::string data_dir = "/dev/shm/train";
+            data_dir = fs_utils::normalize_path(data_dir);
+            std::vector<std::string> file_names;
+            fs_utils::get_image_files(data_dir, file_names);
+            std::cout << "read " << file_names.size() << " files" << std::endl;
+            timer tm;
+            std::vector<cv::Mat> images;
+            const int nread = 10000;
+            for (int i=0; i<nread; ++i) {
+                cv::Mat img = cv::imread("/dev/shm/train/" + file_names[i]);
+                images.push_back(img);
+                if (images.size() >= 512)
+                    images.clear();
+            }
+            const float elapsed = tm.ms_elapsed();
+            std::cout << "throughput: " << (nread / (elapsed/1000.0)) << " images/sec" << std::endl;
+        }
+        void convert_to_c_array() {
+            std::string data_dir = "/dev/shm/train";
+            data_dir = fs_utils::normalize_path(data_dir);
+            std::vector<std::string> file_names;
+            fs_utils::get_image_files(data_dir, file_names);
+            cv::Mat img = cv::imread("/dev/shm/train/" + file_names[0]);
+            int channels(3), width(227), height(227);
+            cv::resize(img, img, cv::Size(227, 227), 0, 0, cv::INTER_LINEAR);
+            std::vector<float> vec(3*227*227);
+            vec.assign(img.begin<float>(), img.end<float>());
+            std::ofstream out("/dev/shm/test/t.bin");
+            
+            out.write((const char*)&channels, sizeof(int));
+            out.write((const char*)&width, sizeof(int));
+            out.write((const char*)&height, sizeof(int));
+            out.write((const char*)vec.data(), vec.size()*sizeof(float));
+        }
+        void test_read_c_array() {
+            int channels, width, height;
+            std::vector<float> vec(3*227*227);
+            
+            timer tm;
+            const int nread = 10000;
+            for (int i=0; i<nread; ++i) {
+                std::ifstream in("/dev/shm/test/t.bin");
+                in.read((char*)&channels, sizeof(int));
+                in.read((char*)&width, sizeof(int));
+                in.read((char*)&height, sizeof(int));
+                in.read((char*)vec.data(), vec.size()*sizeof(float));
+                if (channels != 3 || width != 227 || height != 227) {
+                    std::cerr << "Error loading file" << std::endl;
+                    throw std::exception();
+                }
+            }
+            const float elapsed = tm.ms_elapsed();
+            std::cout << "throughput: " << (nread / (elapsed/1000.0)) << " images/sec" << std::endl;
         }
     }
 }

@@ -111,7 +111,8 @@
         "--prefetch_batch_size ${tensorrt.prefetch_batch_size}",
         "--inference_queue_size ${tensorrt.inference_queue_size}",
         "$('--fake_decoder' if ${tensorrt.fake_decoder} else '')$",
-        "$('--fake_inference' if ${tensorrt.fake_inference} else '')$"
+        "$('--fake_inference' if ${tensorrt.fake_inference} else '')$",
+        "--data_name=${tensorrt.data_name}"
       ],
       "type": "str",
       "desc": "Command line arguments that launcher uses to launch TensorRT."
@@ -178,6 +179,13 @@
       "desc": [
         "*** This parameter is not used since TensorRT backend does not support real data. ***",
         "*** It is here for compatibility reasons with exp.data_dir ***"
+      ]
+    },
+    "tensorrt.data_name": {
+      "val": "images",
+      "type": "str",
+      "desc": [
+        "Name of an input dataset - 'images' or 'tensors'"
       ]
     }
   },

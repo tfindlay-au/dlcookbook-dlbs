@@ -18,8 +18,9 @@ python $dlbs run \
        -Pexp.replica_batch=128\
        -Pexp.num_warmup_batches=10\
        -Pexp.num_batches=20\
-       -Pexp.data_dir='"/home/serebrya/data/"'\
-       -Ptensorrt.num_prefetchers=6\
+       -Pexp.data_dir='"/home/serebrya/data/fast"'\
+       -Ptensorrt.data_name='"tensors"'\
+       -Ptensorrt.num_prefetchers=1\
        -Ptensorrt.num_decoders=2\
        -Ptensorrt.prefetch_queue_size=32\
        -Ptensorrt.prefetch_batch_size=32\

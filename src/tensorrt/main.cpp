@@ -82,6 +82,10 @@ void parse_command_line(int argc, char **argv,
 
 int main(int argc, char **argv) {
     //cv::setNumThreads(1);
+    //tests::image_provider_tests::test_read_c_array();
+    //fast_data_provider::create_dataset("/dev/shm/train", "/dev/shm/fast");
+    //fast_data_provider::benchmark();
+    //return 0;
     // Create one global logger.
     logger_impl logger(std::cout);
     // Parse command line arguments
@@ -129,7 +133,11 @@ int main(int argc, char **argv) {
         logger.log_info("[main                  ]: Will use real data set (" + data_opts.data_dir_ + ")");
         logger.log_warning("[main                  ]: Computing resize dimensions assuming input data has shape [BatchSize, 3, H, W] where H == W.");
         data_opts.height_ = data_opts.width_ = std::sqrt(engine.input_size() / (engine_opts.batch_size_ * 3));
-        dataset = new image_provider(data_opts, &infer_msg_pool, engine.request_queue(), logger);
+        if (data_opts.data_name_ == "images") {
+            dataset = new image_provider(data_opts, &infer_msg_pool, engine.request_queue(), logger);
+        } else {
+            dataset = new fast_data_provider(data_opts, &infer_msg_pool, engine.request_queue(), logger);
+        }
     }
     logger.log_info("[main                  ]: Starting dataset threads");
     dataset->start();
@@ -230,6 +238,7 @@ void parse_command_line(int argc, char **argv,
             "not set the report_frequency and use no_batch_times, the app will still be "\
             "collecting batch times but will not log them.")
         ("data_dir", po::value<std::string>(&data_opts.data_dir_), "Path to a dataset.")
+        ("data_name", po::value<std::string>(&data_opts.data_name_), "Name of a dataset - 'images' or 'tensors'.")
         ("resize_method", po::value<std::string>(&data_opts.resize_method_), "How to resize images: 'crop' or 'resize'.")
         ("num_prefetchers", po::value<int>(&num_prefetchers), "Number of prefetch threads (data readers).")
         ("prefetch_queue_size", po::value<int>(&prefetch_queue_size), "Number of batches to prefetch.")
