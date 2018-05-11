@@ -83,7 +83,7 @@ void parse_command_line(int argc, char **argv,
 int main(int argc, char **argv) {
     //cv::setNumThreads(1);
     //tests::image_provider_tests::test_read_c_array();
-    //fast_data_provider::create_dataset("/dev/shm/train", "/dev/shm/fast");
+    //fast_data_provider::create_dataset("/lvol/serebrya/datasets/train/", "/lvol/serebrya/datasets/tensorrt/");
     //fast_data_provider::benchmark();
     //return 0;
     // Create one global logger.

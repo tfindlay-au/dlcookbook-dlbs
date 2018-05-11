@@ -202,14 +202,30 @@ public:
             }
             bool is_file(false), is_dir(false);
             if (de->d_type != DT_UNKNOWN) {
+                //std::cout << "dir handle provides type: " << int(de->d_type) << std::endl;
                 is_file = de->d_type == DT_REG;
                 is_dir = de->d_type == DT_DIR;
             } else {
                 const std::string dir_item_path = dir + subdir + dir_item;
-                if (stat(dir_item_path.c_str(), &sb) != 0)
+                if (stat(dir_item_path.c_str(), &sb) != 0) {
+                    //std::cerr << "Got dir item type from stat: " << int(sb.st_mode) << std::endl;
                     continue;
-                is_file == S_ISREG(sb.st_mode);
-                is_dir == S_ISDIR(sb.st_mode);
+                }
+                is_file = S_ISREG(sb.st_mode);
+                is_dir = S_ISDIR(sb.st_mode);
+                /*
+                std::cerr << "The path stat (" << dir_item_path << "), is_dir=" << is_dir << ", is_file=" << is_file << std::endl;
+                switch (sb.st_mode & S_IFMT) {
+                    case S_IFBLK:  printf("block device\n");            break;
+                    case S_IFCHR:  printf("character device\n");        break;
+                    case S_IFDIR:  printf("directory\n");               break;
+                    case S_IFIFO:  printf("FIFO/pipe\n");               break;
+                    case S_IFLNK:  printf("symlink\n");                 break;
+                    case S_IFREG:  printf("regular file\n");            break;
+                    case S_IFSOCK: printf("socket\n");                  break;
+                    default:       printf("unknown?\n");                break;
+                }
+                */
             }
             if (is_dir) {
                 get_image_files(dir, files, subdir + dir_item + "/");
@@ -222,6 +238,8 @@ public:
                         files.push_back(subdir + dir_item);
                     }
                 }
+            } {
+                //std::cerr << "Skipping dir item (" << abs_path << "/"  << dir_item << ") - not a file or directory" << std::endl;
             }
         }
         closedir(dir_handle);

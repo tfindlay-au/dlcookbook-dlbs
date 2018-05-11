@@ -450,12 +450,17 @@ public:
         input_data_dir = fs_utils::normalize_path(input_data_dir);
         std::vector<std::string> file_names;
         fs_utils::get_image_files(input_data_dir, file_names);
+        //fs_utils::initialize_dataset(input_data_dir, file_names);
 
         // Convert and write
         output_data_dir = fs_utils::normalize_path(output_data_dir);
         std::vector<float> tensor(nchannels * width * height);
-        for (int i=0; i<1000; ++i) {
+        for (int i=0; i<file_names.size(); ++i) {
             cv::Mat img = cv::imread(input_data_dir + file_names[i]);
+            if (!img.data) {
+                std::cerr << "Critical error - file has not been read (" << (input_data_dir + file_names[i]) << std::endl;
+                exit(1);
+            }
             cv::resize(img, img, cv::Size(width, height), 0, 0, cv::INTER_LINEAR);
             
             tensor.assign(img.begin<float>(), img.end<float>());
