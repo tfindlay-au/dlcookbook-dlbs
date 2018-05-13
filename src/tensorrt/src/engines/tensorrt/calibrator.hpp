@@ -14,11 +14,13 @@
   limitations under the License.
 */
 
-#ifndef DLBS_TENSORRT_BACKEND_CALIBRATOR
-#define DLBS_TENSORRT_BACKEND_CALIBRATOR
+#ifndef DLBS_TENSORRT_BACKEND_ENGINES_TENSORRT_CALIBRATOR
+#define DLBS_TENSORRT_BACKEND_ENGINES_TENSORRT_CALIBRATOR
 
-#include "utils.hpp"
-#include "logger.hpp"
+#include "core/logger.hpp"
+#include "core/utils.hpp"
+#include "engines/tensorrt/tensorrt_utils.hpp"
+#include <sstream>
 
 /**
  * TODO: Is it true that we can run first all networks with small batch sizes to create fake calibration 

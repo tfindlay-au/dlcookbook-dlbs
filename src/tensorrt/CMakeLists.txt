@@ -1,15 +1,58 @@
-cmake_minimum_required(VERSION 2.6)
-project(tensorrt_benchmarks)
+cmake_minimum_required(VERSION 3.2)
+project(TensorRT_Benchmarks)
 
-add_compile_options(-std=c++11)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 
-#add_compile_options(-pedantic -Wall -Wextra -Wcast-align -Wcast-qual -Wctor-dtor-privacy -Wdisabled-optimization)
-#add_compile_options(-Wformat=2 -Winit-self -Wlogical-op -Wmissing-declarations -Wmissing-include-dirs -Wnoexcept)
-#add_compile_options(-Wold-style-cast -Woverloaded-virtual -Wredundant-decls -Wshadow -Wsign-conversion -Wsign-promo)
-#add_compile_options(-Wstrict-null-sentinel -Wswitch-default -Wundef -Werror -Wno-unused)
-#add_compile_options(-Wstrict-overflow=5)
+include_directories(src)
 
-add_executable(tensorrt main.cpp)
+if (0)
+    add_compile_options(-pedantic -Wall -Wextra -Wcast-align -Wcast-qual -Wctor-dtor-privacy -Wdisabled-optimization)
+    add_compile_options(-Wformat=2 -Winit-self -Wlogical-op -Wmissing-declarations -Wmissing-include-dirs -Wnoexcept)
+    add_compile_options(-Wold-style-cast -Woverloaded-virtual -Wredundant-decls -Wshadow -Wsign-conversion -Wsign-promo)
+    add_compile_options(-Wstrict-null-sentinel -Wswitch-default -Wundef -Werror -Wno-unused)
+    add_compile_options(-Wstrict-overflow=5)
+endif()
+
+set(TENSORRT_LIB_SOURCE_FILES "src/core/queues.hpp" "src/core/queues.ipp"
+                              "src/core/utils.hpp" "src/core/utils.cpp"
+                              "src/core/logger.hpp" "src/core/logger.cpp"
+                              "src/core/infer_msg.hpp"
+                              "src/core/infer_engine.hpp" "src/core/infer_engine.cpp"
+                              "src/core/dataset/dataset.hpp" "src/core/dataset/dataset.cpp"
+                              "src/core/dataset/image_dataset.hpp" "src/core/dataset/image_dataset.cpp"
+                              "src/core/dataset/tensor_dataset.hpp" "src/core/dataset/tensor_dataset.cpp")
+add_library(tensorrt_lib STATIC ${TENSORRT_LIB_SOURCE_FILES})
+set_target_properties(tensorrt_lib PROPERTIES LINKER_LANGUAGE CXX)
+set(TENSORRT_LIBS tensorrt_lib pthread)
+
+
+set(TENSORRT_RT_LIB_SOURCE_FILES "src/engines/tensorrt/tensorrt_utils.hpp" "src/engines/tensorrt/tensorrt_utils.cpp"
+                                 "src/engines/tensorrt/calibrator.hpp" "src/engines/tensorrt/profiler.hpp"
+                                 "src/engines/tensorrt_engine.hpp" "src/engines/tensorrt_engine.cpp"
+                                 "src/engines/mgpu_engine.hpp")
+add_library(tensorrt_rt_lib STATIC ${TENSORRT_RT_LIB_SOURCE_FILES})
+set_target_properties(tensorrt_rt_lib PROPERTIES LINKER_LANGUAGE CXX)
+
+
+add_executable(tests_queue tests/tests_queue.cpp)
+target_link_libraries(tests_queue ${TENSORRT_LIBS})
+
+
+add_executable(tests_utils tests/tests_utils.cpp)
+target_link_libraries(tests_utils ${TENSORRT_LIBS})
+
+
+add_executable(tests_tensor_dataset tests/tests_tensor_dataset.cpp)
+target_link_libraries(tests_tensor_dataset ${TENSORRT_LIBS})
+
+
+add_executable(tensorrt tools/tensorrt.cpp)
+target_link_libraries(tensorrt ${TENSORRT_LIBS} tensorrt_rt_lib libnvinfer.so.2 nvcaffe_parser)
+
+
+add_executable(images2tensors tools/images2tensors.cpp)
+target_link_libraries(images2tensors ${TENSORRT_LIBS})
+
 
 FIND_PACKAGE(CUDA COMPONENTS cudart REQUIRED)
 if(CUDA_FOUND)
@@ -21,6 +64,8 @@ FIND_PACKAGE(Boost COMPONENTS program_options REQUIRED)
 if(Boost_FOUND)
     include_directories(${Boost_INCLUDE_DIRS})
     target_link_libraries(tensorrt ${Boost_LIBRARIES})
+    target_link_libraries(images2tensors ${Boost_LIBRARIES})
+    target_link_libraries(tests_tensor_dataset ${Boost_LIBRARIES})
 endif()
 
 find_package(OpenCV 2)
@@ -28,12 +73,13 @@ if(OpenCV_FOUND)
     add_definitions(-DHAS_OPENCV)
     include_directories(${OpenCV_INCLUDE_DIRS})
     target_link_libraries(tensorrt ${OpenCV_LIBS})
+    target_link_libraries(images2tensors ${OpenCV_LIBS})
 endif()
 
-target_link_libraries(tensorrt libnvinfer.so.2)
-target_link_libraries(tensorrt nvcaffe_parser)
 
 install(TARGETS tensorrt RUNTIME DESTINATION bin)
+install(TARGETS images2tensors RUNTIME DESTINATION bin)
+
 
 set(CMAKE_BUILD_TYPE Release)
 #set(CMAKE_BUILD_TYPE Debug)

@@ -15,8 +15,8 @@
 */
 // https://juanchopanzacpp.wordpress.com/2013/02/26/concurrent-queue-c11/
 // https://codereview.stackexchange.com/questions/149676/writing-a-thread-safe-queue-in-c
-#ifndef DLBS_TENSORRT_BACKEND_INFER_MSG
-#define DLBS_TENSORRT_BACKEND_INFER_MSG
+#ifndef DLBS_TENSORRT_BACKEND_CORE_INFER_MSG
+#define DLBS_TENSORRT_BACKEND_CORE_INFER_MSG
 
 #include "utils.hpp"
 #include "queues.hpp"
@@ -28,9 +28,9 @@
 class inference_msg {
 private:
     std::vector<float> input_;   //!< Input data of shape [BatchSize, ...]
-    std::vector<float> output_;  //!< Input data of shape [BatchSize, ...]
+    std::vector<float> output_;  //!< Output data of shape [BatchSize, ...]
 
-    size_t batch_size_ = 0;      //!< Batch size of this inference message
+    size_t batch_size_ = 0;      //!< Number of instances in this infer message.
     
     float batch_time_ = 0;       //!< Total batch time including CPU <-> GPU transfer overhead
     float infer_time_ = 0;       //!< Inference time excluding data transfer overhead
@@ -47,20 +47,20 @@ public:
     void set_infer_time(const float infer_time) { infer_time_ = infer_time; };
     /**
      * @brief Construct and initialize inference task.
-     * @param input_size Number of elements in an input tensor 
-     * including batch dimension
-     * @param output_size Number of elements in an output tensor
-     * including batch dimension
+     * @param batch_size Number of instances in this infer message.
+     * @param input_size Number of elements in one input data point
+     * @param output_size Number of elements in one output data point
      * @param randomize_input If true, randomly initialize input tensor.
      */
     inference_msg(const size_t batch_size,
                   const size_t input_size, const size_t output_size,
                   const bool randomize_input=false) {
         batch_size_ = batch_size;
-        input_.resize(input_size);
-        output_.resize(output_size);
-        if (randomize_input)
+        input_.resize(batch_size * input_size);
+        output_.resize(batch_size * output_size);
+        if (randomize_input) {
             random_input();
+        }
     }
     /**
      * @brief Fill input tensor with random data 
@@ -81,10 +81,17 @@ class inference_msg_pool {
 private:
     std::vector<inference_msg*> messages_;             //!< All allocated messages managed by the pool.
     thread_safe_queue<inference_msg*> free_messages_;  //!< Messages that are currently available.
-    std::atomic_bool stop_;
 public:
+    /**
+     * @brief Constructor for a inference message queue.
+     * @param count Number of preallocated inference messages.
+     * @param batch_size Number of data points in one batch. We need this to pre-allocate memory.
+     * @param input_size Number of elements in one data point. We need this to pre-allocate memory.
+     * @param output_size Number of elements in one output vector. We need this to pre-allocate memory.
+     *                    Usually, it's the same as numebr of neural network outputs (classes).
+     */
     inference_msg_pool(const int count, const size_t batch_size, const size_t input_size, const size_t output_size,
-                       const bool randomize_input=false) : stop_(false) {
+                       const bool randomize_input=false) {
         for (int i=0; i<count; ++i) {
             inference_msg *msg= new inference_msg(batch_size, input_size, output_size, randomize_input);
             messages_.push_back(msg);

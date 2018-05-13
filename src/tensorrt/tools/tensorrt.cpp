@@ -16,6 +16,7 @@
 /**
    Completely based on giexec.cpp example in /usr/src/gie_samples/samples/giexec/
  */
+/*
 #include <iostream>
 #include <string>
 #include <random>
@@ -28,16 +29,14 @@
 #include <fstream>
 #include <thread>
 #include <ctime>
-
 #include <string.h>
-
-#include <cuda_runtime_api.h>
-
+*/
+#include "core/infer_engine.hpp"
+#include "core/dataset/dataset.hpp"
+#include "core/dataset/image_dataset.hpp"
+#include "core/dataset/tensor_dataset.hpp"
+#include "engines/mgpu_engine.hpp"
 #include <boost/program_options.hpp>
-
-#include "logger.hpp"
-#include "infer_engine.hpp"
-#include "data_providers.hpp"
 
 /**
  *  @brief An inference benchmark based on NVIDIA's TensorRT library.
@@ -71,26 +70,21 @@
     ResNet50:      64x3x224x224 =   37 Mb
  
  */
-using namespace nvinfer1;
-using namespace nvcaffeparser1;
+//using namespace nvinfer1;
+//using namespace nvcaffeparser1;
 namespace po = boost::program_options;
 
 void parse_command_line(int argc, char **argv,
                         po::options_description opt_desc, po::variables_map& var_map,
-                        inference_engine_opts& engine_opts, image_provider_opts& data_opts,
+                        inference_engine_opts& engine_opts, dataset_opts& data_opts,
                         logger_impl& logger);
 
 int main(int argc, char **argv) {
-    //cv::setNumThreads(1);
-    //tests::image_provider_tests::test_read_c_array();
-    //fast_data_provider::create_dataset("/lvol/serebrya/datasets/train/", "/lvol/serebrya/datasets/tensorrt/");
-    //fast_data_provider::benchmark();
-    //return 0;
     // Create one global logger.
     logger_impl logger(std::cout);
     // Parse command line arguments
     inference_engine_opts engine_opts;
-    image_provider_opts data_opts;
+    dataset_opts data_opts;
     try {
         po::options_description opt_desc("Options");
         po::variables_map var_map;
@@ -119,28 +113,28 @@ int main(int argc, char **argv) {
     const size_t num_engines = engine.num_engines();
     // Create pool of available task request objects. These objects (infer_task) will be initialized
     // to store input/output tensors so there will be no need to do memory allocations during benchmark.
-    const float est_mp_mem = static_cast<float>(engine_opts.inference_queue_size_*(8+4+4+4+engine.input_size()*4+engine.output_size()*4)) / (1024*1024);
+    const float est_mp_mem = static_cast<float>(engine_opts.inference_queue_size_*(8+4+4+4+engine.batch_size()*(engine.input_size()+engine.output_size()))) / (1024*1024);
     logger.log_info("[main                  ]: Creating inference message pool with " + S(engine_opts.inference_queue_size_) + " messages, estimated memory is " + std::to_string(est_mp_mem) + " mb.");
     inference_msg_pool infer_msg_pool(engine_opts.inference_queue_size_, engine.batch_size(), engine.input_size(), engine.output_size(), true);
     // Create data provider. The data provider will spawn at least one thread. It will fetch free task objects
     // from pool of task objects, will populate them with data and will submit tasks to data queue. All
     // preprocessing logic needs to be implemented in data provider.
-    data_provider* dataset(nullptr);
-    if (data_opts.data_dir_ == "") {
-        dataset = new synthetic_data_provider(&infer_msg_pool, engine.request_queue());
+    dataset* data(nullptr);
+    if (data_opts.data_name_ == "synthetic" || data_opts.data_dir_ == "") {
+        data = new synthetic_dataset(&infer_msg_pool, engine.request_queue());
         logger.log_info("[main                  ]: Will use synthetic data set");
     } else {
         logger.log_info("[main                  ]: Will use real data set (" + data_opts.data_dir_ + ")");
         logger.log_warning("[main                  ]: Computing resize dimensions assuming input data has shape [BatchSize, 3, H, W] where H == W.");
-        data_opts.height_ = data_opts.width_ = std::sqrt(engine.input_size() / (engine_opts.batch_size_ * 3));
+        data_opts.height_ = data_opts.width_ = std::sqrt(engine.input_size() / 3);
         if (data_opts.data_name_ == "images") {
-            dataset = new image_provider(data_opts, &infer_msg_pool, engine.request_queue(), logger);
+            data = new image_dataset(data_opts, &infer_msg_pool, engine.request_queue(), logger);
         } else {
-            dataset = new fast_data_provider(data_opts, &infer_msg_pool, engine.request_queue(), logger);
+            data = new tensor_dataset(data_opts, &infer_msg_pool, engine.request_queue(), logger);
         }
     }
     logger.log_info("[main                  ]: Starting dataset threads");
-    dataset->start();
+    data->start();
     // Start pool of inference engines. This will start one thread per engine. Individual inference engines
     // will be fetching data from data queue, will be doing inference and will be submitting same task request
     // objects with inference results and statistics to decision queue.
@@ -177,18 +171,18 @@ int main(int argc, char **argv) {
     }
     // Shutdown everything and wait for all threads to exit.
     logger.log_info("[main                  ]: Stopping and joining threads");
-    dataset->stop();  engine.stop();  infer_msg_pool.close();
+    data->stop();  engine.stop();  infer_msg_pool.close();
     logger.log_info("[main                  ]: Waiting for data provider ...");
-    dataset->join();
+    data->join();
     logger.log_info("[main                  ]: Waiting for inference engine ...");
     engine.join();
-    delete  dataset;  dataset = nullptr;
+    delete  data;  data = nullptr;
     // Log final results.
     logger.log_info("[main                  ]: Reporting results");
     for (size_t i=0; i<num_engines; ++i) {
         time_tracker *tracker = engine.engine(i)->get_time_tracker();
         const std::string gpu_id = std::to_string(engine.engine(i)->engine_id());
-        logger.log_final_results(tracker->get_batch_times(), engine_opts.batch_size_, "gpu_" + gpu_id + "_infer_", !engine_opts.do_not_report_batch_times_);
+        logger.log_final_results(tracker->get_infer_times(), engine_opts.batch_size_, "gpu_" + gpu_id + "_infer_", !engine_opts.do_not_report_batch_times_);
         logger.log_final_results(tracker->get_batch_times(), engine_opts.batch_size_, "gpu_" + gpu_id + "_batch_", !engine_opts.do_not_report_batch_times_);
     }
     logger.log_final_results(tm_tracker.get_batch_times(), engine_opts.batch_size_*num_engines, "total_", false);
@@ -198,7 +192,7 @@ int main(int argc, char **argv) {
 
 void parse_command_line(int argc, char **argv,
                         boost::program_options::options_description opt_desc, po::variables_map& var_map,
-                        inference_engine_opts& engine_opts, image_provider_opts& data_opts,
+                        inference_engine_opts& engine_opts, dataset_opts& data_opts,
                         logger_impl& logger) {
     namespace po = boost::program_options;
     std::string gpus;
