@@ -20,6 +20,7 @@
 
 #include "core/queues.hpp"
 #include "core/infer_msg.hpp"
+#include "core/logger.hpp"
 #include <thread>
 #include <atomic>
 
@@ -58,6 +59,7 @@ struct dataset_opts {
     resize_method get_resize_method() const {
         return resize_method_ == "resize"? resize_method::resize : resize_method::crop;
     }
+    bool shuffle_files_ = false;           //!< If true, shuffle list of files.
 };
 std::ostream &operator<<(std::ostream &os, dataset_opts const &opts);
 
@@ -105,6 +107,8 @@ public:
      * to data queue.
      */
     virtual void run() = 0;
+    
+    static float benchmark(dataset* ds, const int num_warmup_batches, const int num_batches, logger_impl &logger);
 };
 
 

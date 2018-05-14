@@ -15,44 +15,81 @@
 */
 
 #include "core/dataset/tensor_dataset.hpp"
+#include <sstream>
+
+#define _XOPEN_SOURCE 700
+#include <unistd.h>
+#include <fcntl.h>
+
 
 void tensor_dataset::prefetcher_func(tensor_dataset* myself,
                                      const size_t prefetcher_id, const size_t num_prefetchers) {
     sharded_vector<std::string> my_files(myself->file_names_, myself->prefetchers_.size(), prefetcher_id);
+    std::ostringstream oss;
+    oss << my_files;
+    myself->logger_.log_info(fmt("[prefetcher       %02d/%02d]: %s", prefetcher_id, num_prefetchers, oss.str().c_str()));
+    myself->logger_.log_info(fmt("[prefetcher       %02d/%02d]: image read strategy - low level C IO api with POSIX_FADV_DONTNEED", prefetcher_id, num_prefetchers));
         
     const int height(static_cast<int>(myself->opts_.height_)),
               width(static_cast<int>(myself->opts_.width_));
     const size_t img_size = 3 * height * width;
     running_average fetch, load, submit;
+    
     inference_msg *output(nullptr);
+    size_t num_images_in_batch = 0;
+    int file_descriptor(-1);
     try {
         timer clock;
         clock.restart();
         while (!myself->stop_) {
-            // Get inference request
-            clock.restart();
-            output = myself->inference_msg_pool_->get();
-            fetch.update(clock.ms_elapsed());
-            for (size_t i=0; i<output->batch_size(); ++i) {
-                const auto fname = my_files.next();
-                int img_nchannels(0), img_width(0), img_height(0);
-                    
-                std::ifstream in(fname.c_str());
-                in.read((char*)&img_nchannels, sizeof(int));
-                in.read((char*)&img_width, sizeof(int));
-                in.read((char*)&img_height, sizeof(int));
-                if (img_nchannels != 3 || img_width != width || img_height != height) {
-                    myself->logger_.log_error(fmt(
-                        "[prefetcher       %02d/%02d]: invalid image dimensions, epxecting (3, %d, %d), received (3, %d, %d)",
-                        prefetcher_id, num_prefetchers, width, height, img_width, img_height    
-                    ));
-                }
-                in.read((char*)(output->input().data()+img_size*i), sizeof(float)*img_size);
+            // Get inference request if we do not have one.
+            if (!output) {
+                timer fetch_clock;
+                output = myself->inference_msg_pool_->get();
+                fetch.update(fetch_clock.ms_elapsed());
             }
-            // Submit inference request
-            clock.restart();  myself->request_queue_->push(output);  submit.update(clock.ms_elapsed());
+            // If we have read all images, submit them
+            if (num_images_in_batch == output->batch_size()) {
+                // Submit inference request
+                load.update(clock.ms_elapsed());
+                timer submit_clock;
+                myself->request_queue_->push(output);
+                submit.update(submit_clock.ms_elapsed());
+                num_images_in_batch = 0;
+                output = nullptr;
+                clock.restart();
+                continue;
+            }
+            // Check if we need to open next image file
+            if (file_descriptor == -1) {
+                const auto fname = my_files.next();
+                file_descriptor = open(fname.c_str(), O_RDONLY);
+                fdatasync(file_descriptor);
+            }
+            // Try to read as many images in one read call as we need
+            const size_t need_images_to_load = output->batch_size() - num_images_in_batch;
+            const ssize_t num_bytes_read = read(
+                file_descriptor,
+                (void*)(output->input().data()+img_size*num_images_in_batch), 
+                need_images_to_load*sizeof(float)*img_size
+            );
+            // If nothing has been loaded, go to next file
+            if (num_bytes_read <=0) {
+                posix_fadvise(file_descriptor, 0, 0, POSIX_FADV_DONTNEED);
+                close(file_descriptor);
+                file_descriptor = -1;
+                continue;
+            }
+            // How many images have we just loaded?
+            const size_t num_images_loaded = num_bytes_read / (sizeof(float)*img_size);
+            num_images_in_batch += num_images_loaded;
         }
     } catch(queue_closed) {
+    }
+    if (file_descriptor > 0) {
+        posix_fadvise(file_descriptor, 0, 0, POSIX_FADV_DONTNEED);
+        close(file_descriptor);
+        file_descriptor = -1;
     }
     myself->logger_.log_info(fmt(
         "[prefetcher       %02d/%02d]: {fetch:%.5f}-->--[load:%.5f]-->--{submit:%.5f}",
@@ -65,6 +102,9 @@ tensor_dataset::tensor_dataset(const dataset_opts& opts, inference_msg_pool* poo
 : dataset(pool, request_queue), opts_(opts), logger_(logger) {
 
     fs_utils::initialize_dataset(opts_.data_dir_, file_names_);
+    if (opts.shuffle_files_) {
+        std::random_shuffle(file_names_.begin(), file_names_.end());
+    }
     prefetchers_.resize(opts_.num_prefetchers_, nullptr);
 }
     
@@ -90,29 +130,14 @@ float tensor_dataset::benchmark(const std::string dir, const size_t batch_size, 
     opts.prefetch_batch_size_=batch_size;
     opts.height_ = img_size;
     opts.width_ = img_size;
+    opts.shuffle_files_ = true;
         
     inference_msg_pool pool(num_infer_msgs, opts.prefetch_batch_size_, 3*opts.height_*opts.width_, 1000);
     thread_safe_queue<inference_msg*> request_queue;
     tensor_dataset data(opts, &pool, &request_queue, logger);
         
-    data.start();
-    // N warmup iterations
-    std::cout << "Running warmup iterations" << std::endl;
-    for (int i=0; i<num_warmup_batches; ++i) {
-        pool.release(request_queue.pop());
-    }
-    // N benchmark iterations
-    std::cout << "Running benchmark iterations" << std::endl;
-    timer t;
-    size_t num_images(0);
-    for (int i=0; i<num_batches; ++i) {
-        inference_msg* msg = request_queue.pop();
-        num_images += msg->batch_size();
-        pool.release(msg);
-    }
-    const float throughput = 1000.0 * num_images / t.ms_elapsed();
-    data.stop();
-    std::cout << "num_readers=" << opts.num_prefetchers_ << ", throughput=" << throughput << std::endl;
+    const float throughput = dataset::benchmark(&data, num_warmup_batches, num_batches, logger);
+    logger.log_info(fmt("[benchmarks            ]: num_readers=%d, throughput=%.2f", opts.num_prefetchers_, throughput));
     data.join();
     return throughput;
 }

@@ -146,7 +146,7 @@ private:
 public:
     size_t size() const { return vec_->size(); }
     size_t num_shards() const { return num_shards_; }
-    size_t my_shard() const { my_shard_; }
+    size_t my_shard() const { return my_shard_; }
     
     size_t shard_begin() const { return begin_; }
     size_t shard_length() const { return length_; }
@@ -274,5 +274,17 @@ public:
     size_t num_steps() const { return i_-1; }
 };
 std::ostream& operator<<(std::ostream &out, const running_average &ra);
+
+class PictureTool {
+public:
+    template<typename T> struct pixel{};
+
+    template<typename T>
+    static void opencv2tensor(unsigned char* opencv_data, const int nchannels, const int height,
+                              const int width, T* tensor);
+};
+
+template<> struct PictureTool::pixel<float> { static const char encoding = 1; };
+template<> struct PictureTool::pixel<unsigned char> { static const char encoding = 10; };
 
 #endif

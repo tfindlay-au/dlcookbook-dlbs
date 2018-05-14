@@ -129,7 +129,7 @@ void fs_utils::get_image_files(std::string dir, std::vector<std::string>& files,
             if (pos != std::string::npos) {
                 std::string fext = dir_item.substr(pos + 1);
                 std::transform(fext.begin(), fext.end(), fext.begin(), ::tolower);
-                if (fext == "jpg" || fext == "jpeg") {
+                if (fext == "jpg" || fext == "jpeg" || fext == "tensors") {
                     files.push_back(subdir + dir_item);
                 }
             }
@@ -166,3 +166,24 @@ std::ostream& operator<<(std::ostream &out, const running_average &ra) {
     std::cout << "running_average{size=" << ra.num_steps() << ", value=" << ra.value() << "}";
     return out;
 }
+
+template<typename T>
+void PictureTool::opencv2tensor(unsigned char* opencv_data, const int nchannels, const int height,
+                                const int width, T* tensor) {
+    const int channel_size = height * width;
+    for(int j = 0; j < height; ++j) {
+        const int row_idx = nchannels * width * j;
+        for(int i = 0; i < width; ++i) {
+            const auto col_rel_idx = i * nchannels;
+            const int b = opencv_data[row_idx + col_rel_idx] ;            // b
+            const int g = opencv_data[row_idx + col_rel_idx + 1];         // g
+            const int r = opencv_data[row_idx + col_rel_idx + 2];         // r
+            // [RGB, H, W]
+            tensor[width * j + i                              ] = r;
+            tensor[width * j + i + channel_size               ] = g;
+            tensor[width * j + i + channel_size + channel_size] = b;
+        }
+    }
+}
+template void PictureTool::opencv2tensor<float>(unsigned char* opencv_data, const int nchannels, const int height, const int width, float* tensor);
+template void PictureTool::opencv2tensor<unsigned char>(unsigned char* opencv_data, const int nchannels, const int height, const int width, unsigned char* tensor);

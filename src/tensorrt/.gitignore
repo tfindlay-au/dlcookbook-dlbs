@@ -6,4 +6,5 @@
 !CMakeLists.txt
 !*.cpp
 !*.hpp
+!*.ipp
 !README.md

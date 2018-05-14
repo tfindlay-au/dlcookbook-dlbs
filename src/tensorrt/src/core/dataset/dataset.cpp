@@ -27,6 +27,27 @@ std::ostream &operator<<(std::ostream &os, dataset_opts const &opts) {
     return os;
 }
 
+float dataset::benchmark(dataset* ds, const int num_warmup_batches, const int num_batches, logger_impl &logger) {
+    ds->start();
+    // N warmup iterations
+    logger.log_info(fmt("[benchmarks            ]: running %d warmup iterations", num_warmup_batches));
+    for (int i=0; i<num_warmup_batches; ++i) {
+        ds->inference_msg_pool_->release(ds->request_queue_->pop());
+    }
+    // N benchmark iterations
+    logger.log_info(fmt("[benchmarks            ]: running %d benchmark iterations", num_batches));
+    timer t;
+    size_t num_images(0);
+    for (int i=0; i<num_batches; ++i) {
+        inference_msg* msg = ds->request_queue_->pop();
+        num_images += msg->batch_size();
+        ds->inference_msg_pool_->release(msg);
+    }
+    const float throughput = 1000.0 * num_images / t.ms_elapsed();
+    ds->stop();
+    return throughput;
+}
+
 void synthetic_dataset::run() {
     try {
         while(!stop_) {

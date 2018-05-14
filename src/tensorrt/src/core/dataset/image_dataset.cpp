@@ -134,6 +134,9 @@ image_dataset::image_dataset(const dataset_opts& opts, inference_msg_pool* pool,
                                abstract_queue<inference_msg*>* request_queue, logger_impl& logger) 
 : dataset(pool, request_queue), prefetch_queue_(opts.prefetch_queue_size_), opts_(opts), logger_(logger) {
     fs_utils::initialize_dataset(opts_.data_dir_, file_names_);
+    if (opts.shuffle_files_) {
+        std::random_shuffle(file_names_.begin(), file_names_.end());
+    }
     prefetchers_.resize(opts_.num_prefetchers_, nullptr);
     decoders_.resize(opts_.num_decoders_, nullptr);
 }
@@ -168,4 +171,29 @@ void image_dataset::run() {
     prefetch_queue_.empty_queue(queue_content);
     for (size_t i=0; i<queue_content.size(); ++i)
         delete queue_content[i];
+}
+
+float image_dataset::benchmark(const std::string dir, const size_t batch_size, const size_t img_size,
+                               const size_t num_prefetches, const size_t num_infer_msgs,
+                               const int num_warmup_batches, const int num_batches) {
+    logger_impl logger;
+    dataset_opts opts;
+    opts.data_dir_ = dir;
+    opts.num_prefetchers_ = num_prefetches;
+    opts.prefetch_batch_size_=batch_size;
+    opts.num_decoders_ = 1;
+    opts.fake_decoder_ = true;
+    opts.height_ = img_size;
+    opts.width_ = img_size;
+    opts.shuffle_files_ = true;
+    opts.prefetch_queue_size_ = 6;
+        
+    inference_msg_pool pool(num_infer_msgs, opts.prefetch_batch_size_, 3*opts.height_*opts.width_, 1000);
+    thread_safe_queue<inference_msg*> request_queue;
+    image_dataset data(opts, &pool, &request_queue, logger);
+        
+    const float throughput = dataset::benchmark(&data, num_warmup_batches, num_batches, logger);
+    logger.log_info(fmt("[benchmarks            ]: num_readers=%d, throughput=%.2f", opts.num_prefetchers_, throughput));
+    data.join();
+    return throughput;
 }
