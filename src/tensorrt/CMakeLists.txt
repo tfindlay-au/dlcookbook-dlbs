@@ -79,6 +79,7 @@ endif()
 
 install(TARGETS tensorrt RUNTIME DESTINATION bin)
 install(TARGETS images2tensors RUNTIME DESTINATION bin)
+install(TARGETS tests_tensor_dataset RUNTIME DESTINATION bin)
 
 
 if(NOT CMAKE_BUILD_TYPE)

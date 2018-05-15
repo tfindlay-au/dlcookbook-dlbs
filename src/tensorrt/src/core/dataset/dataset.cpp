@@ -36,15 +36,20 @@ float dataset::benchmark(dataset* ds, const int num_warmup_batches, const int nu
     }
     // N benchmark iterations
     logger.log_info(fmt("[benchmarks            ]: running %d benchmark iterations", num_batches));
-    timer t;
+    running_average fetch;
+    timer t, fetch_clock;
     size_t num_images(0);
+    inference_msg *msg;
     for (int i=0; i<num_batches; ++i) {
-        inference_msg* msg = ds->request_queue_->pop();
+        fetch_clock.restart();
+        msg = ds->request_queue_->pop();
+        fetch.update(fetch_clock.ms_elapsed());
         num_images += msg->batch_size();
         ds->inference_msg_pool_->release(msg);
     }
     const float throughput = 1000.0 * num_images / t.ms_elapsed();
     ds->stop();
+    logger.log_info(fmt("[benchmarks            ]: {fetch:%f}", fetch.value()));
     return throughput;
 }
 
