@@ -17,6 +17,11 @@
 
 #include "core/utils.hpp"
 
+#define _XOPEN_SOURCE 700
+#include <unistd.h>
+#include <fcntl.h>
+
+
 template<>
 std::string S<bool>(const bool &t) { return (t ? "true" : "false"); }
 
@@ -187,3 +192,50 @@ void PictureTool::opencv2tensor(unsigned char* opencv_data, const int nchannels,
 }
 template void PictureTool::opencv2tensor<float>(unsigned char* opencv_data, const int nchannels, const int height, const int width, float* tensor);
 template void PictureTool::opencv2tensor<unsigned char>(unsigned char* opencv_data, const int nchannels, const int height, const int width, unsigned char* tensor);
+
+
+binary_file::binary_file(const std::string& dtype,
+                         const bool advise_no_cache) : advise_no_cache_(advise_no_cache), dtype_(dtype) {
+}
+
+bool binary_file::is_opened() {
+    return (fd_ > 0);
+}
+
+void binary_file::open(const std::string& fname) {
+    fd_ = ::open(fname.c_str(), O_RDONLY);
+    if (advise_no_cache_) {
+        fdatasync(fd_);
+    }
+}
+
+void binary_file::close() {
+    if (fd_ > 0) {
+        if (advise_no_cache_) {
+            posix_fadvise(fd_, 0, 0, POSIX_FADV_DONTNEED);
+        }
+        ::close(fd_);
+        fd_ = -1;
+    }
+}
+
+ssize_t binary_file::read(float* dest, const size_t count) {
+    ssize_t read_count;
+    if (buffer_.empty()) {
+        const ssize_t num_bytes_read = ::read(fd_, (void*)dest,  sizeof(float)*count);
+        read_count = num_bytes_read / sizeof(float);
+    } else {
+        const ssize_t num_bytes_read = ::read(fd_, (void*)buffer_.data(),  sizeof(unsigned char)*count);
+        if (num_bytes_read > 0) {
+            std::copy(buffer_.data(), buffer_.data() + num_bytes_read, dest);
+        }
+        read_count = num_bytes_read;
+    }
+    return read_count;
+}
+
+void binary_file::allocate_if_needed(const size_t count) {
+    if (dtype_ == "uchar" && buffer_.size() != count) {
+        buffer_.resize(count);
+    }
+}

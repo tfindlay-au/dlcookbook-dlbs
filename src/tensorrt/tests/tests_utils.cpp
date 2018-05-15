@@ -2,6 +2,29 @@
 
 
 int main(int argc, char **argv) {
+    // Test Type cast
+    /*
+    {
+        const size_t num_batch_elements = 512 * 3 * 227 * 227;
+        std::vector<unsigned char> char_data(num_batch_elements);
+        std::vector<float> float_data(num_batch_elements);
+        for (int i=0; i<num_batch_elements; ++i) {
+            char_data[i] = 2;
+            float_data[i] = 2;
+        }
+        timer tm;
+        const int num_iters = 100;
+        for (int i=0; i<num_iters; ++i) {
+            for (int j=0; j<num_batch_elements; ++j) {
+                float_data[j] = static_cast<float>(char_data[j]);
+            }
+        }
+        const float elapsed = tm.ms_elapsed();
+        const float elements_sec = (1000.0 * (num_iters * num_batch_elements) / elapsed);
+        std::cout << "elements / sec = " << elements_sec << ", batches / sec = " << (elements_sec / num_batch_elements) << std::endl;
+    }
+    return 0;
+    */
     // Test Random
     {
         std::vector<float> vec (100, 0);

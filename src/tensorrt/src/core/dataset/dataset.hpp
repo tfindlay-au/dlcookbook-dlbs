@@ -40,6 +40,7 @@ enum class resize_method : int {
 
 struct dataset_opts {
     std::string data_dir_;                 //!< Path to a dataset.
+    std::string dtype_ = "float";          //!< Matrix data type in binary files.
 
     std::string resize_method_ = "crop";   //!< Image resize method - 'crop' or 'resize'.
     

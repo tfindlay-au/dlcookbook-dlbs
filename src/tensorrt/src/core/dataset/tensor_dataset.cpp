@@ -28,7 +28,7 @@ void tensor_dataset::prefetcher_func(tensor_dataset* myself,
     std::ostringstream oss;
     oss << my_files;
     myself->logger_.log_info(fmt("[prefetcher       %02d/%02d]: %s", prefetcher_id, num_prefetchers, oss.str().c_str()));
-    myself->logger_.log_info(fmt("[prefetcher       %02d/%02d]: image read strategy - low level C IO api with POSIX_FADV_DONTNEED", prefetcher_id, num_prefetchers));
+    //myself->logger_.log_info(fmt("[prefetcher       %02d/%02d]: image read strategy - low level C IO api with POSIX_FADV_DONTNEED", prefetcher_id, num_prefetchers));
         
     const int height(static_cast<int>(myself->opts_.height_)),
               width(static_cast<int>(myself->opts_.width_));
@@ -37,7 +37,7 @@ void tensor_dataset::prefetcher_func(tensor_dataset* myself,
     
     inference_msg *output(nullptr);
     size_t num_images_in_batch = 0;
-    int file_descriptor(-1);
+    binary_file bfile(myself->opts_.dtype_, true);
     try {
         timer clock;
         clock.restart();
@@ -47,9 +47,10 @@ void tensor_dataset::prefetcher_func(tensor_dataset* myself,
                 timer fetch_clock;
                 output = myself->inference_msg_pool_->get();
                 fetch.update(fetch_clock.ms_elapsed());
+                bfile.allocate_if_needed(output->batch_size() * img_size);
             }
             // If we have read all images, submit them
-            if (num_images_in_batch == output->batch_size()) {
+            if (num_images_in_batch >= output->batch_size()) {
                 // Submit inference request
                 load.update(clock.ms_elapsed());
                 timer submit_clock;
@@ -60,36 +61,24 @@ void tensor_dataset::prefetcher_func(tensor_dataset* myself,
                 clock.restart();
                 continue;
             }
-            // Check if we need to open next image file
-            if (file_descriptor == -1) {
-                const auto fname = my_files.next();
-                file_descriptor = open(fname.c_str(), O_RDONLY);
-                fdatasync(file_descriptor);
+            if (!bfile.is_opened()) {
+                bfile.open(my_files.next());
             }
+
             // Try to read as many images in one read call as we need
-            const size_t need_images_to_load = output->batch_size() - num_images_in_batch;
-            const ssize_t num_bytes_read = read(
-                file_descriptor,
-                (void*)(output->input().data()+img_size*num_images_in_batch), 
-                need_images_to_load*sizeof(float)*img_size
+            const ssize_t read_count  = bfile.read(
+                output->input().data() + img_size * num_images_in_batch,
+                img_size * (output->batch_size() - num_images_in_batch)
             );
-            // If nothing has been loaded, go to next file
-            if (num_bytes_read <=0) {
-                posix_fadvise(file_descriptor, 0, 0, POSIX_FADV_DONTNEED);
-                close(file_descriptor);
-                file_descriptor = -1;
+            // If nothing has been loaded, go to a next file
+            if (read_count <= 0) {
+                bfile.close();
                 continue;
             }
             // How many images have we just loaded?
-            const size_t num_images_loaded = num_bytes_read / (sizeof(float)*img_size);
-            num_images_in_batch += num_images_loaded;
+            num_images_in_batch += read_count / img_size;
         }
     } catch(queue_closed) {
-    }
-    if (file_descriptor > 0) {
-        posix_fadvise(file_descriptor, 0, 0, POSIX_FADV_DONTNEED);
-        close(file_descriptor);
-        file_descriptor = -1;
     }
     myself->logger_.log_info(fmt(
         "[prefetcher       %02d/%02d]: {fetch:%.5f}-->--[load:%.5f]-->--{submit:%.5f}",
@@ -122,7 +111,8 @@ void tensor_dataset::run() {
 
 float tensor_dataset::benchmark(const std::string dir, const size_t batch_size, const size_t img_size,
                                 const size_t num_prefetches, const size_t num_infer_msgs,
-                                const int num_warmup_batches, const int num_batches) {
+                                const int num_warmup_batches, const int num_batches,
+                                const std::string& dtype) {
     logger_impl logger;
     dataset_opts opts;
     opts.data_dir_ = dir;
@@ -131,6 +121,7 @@ float tensor_dataset::benchmark(const std::string dir, const size_t batch_size, 
     opts.height_ = img_size;
     opts.width_ = img_size;
     opts.shuffle_files_ = true;
+    opts.dtype_ = dtype;
         
     inference_msg_pool pool(num_infer_msgs, opts.prefetch_batch_size_, 3*opts.height_*opts.width_, 1000);
     thread_safe_queue<inference_msg*> request_queue;

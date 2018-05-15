@@ -287,4 +287,25 @@ public:
 template<> struct PictureTool::pixel<float> { static const char encoding = 1; };
 template<> struct PictureTool::pixel<unsigned char> { static const char encoding = 10; };
 
+/**
+ * @brief A file wrapper that can use either C approach or C++ streams
+ * to read binary data.
+ */
+class binary_file {
+private:
+    int fd_ = -1;                          //!< File descriptor.
+    bool advise_no_cache_ = false;         //!< If true, advise OS not to cache file.
+    const std::string dtype_;              //!< Matrix data type in a binary file ('float', 'uchar').
+    std::vector<unsigned char> buffer_;    //!< If images are stored as unsigned chars, use this buffer.
+public:
+    binary_file(const std::string& dtype="float",
+                const bool advise_no_cache=false);
+    virtual ~binary_file() { close(); }
+    bool is_opened();
+    void open(const std::string& fname);
+    void close();
+    ssize_t read(float* dest, const size_t count);
+    void allocate_if_needed(const size_t count);
+};
+
 #endif
