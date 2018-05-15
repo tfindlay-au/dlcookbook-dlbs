@@ -2,6 +2,19 @@
 
 
 int main(int argc, char **argv) {
+    // Test Split Vector Algorithm
+    {
+        const size_t len = 13;
+        std::vector<int> vec(len, 0);
+        for (int num_shards=1; num_shards<=len+2; ++num_shards) {
+            std::cout << len << " into " << num_shards << " workers:";
+            for (int my_shard=0; my_shard<num_shards; ++my_shard) {
+                sharded_vector<int> svec(vec, num_shards, my_shard);
+                std::cout << " " << svec.shard_length();
+            }
+            std::cout << std::endl;
+        }
+    }
     // Test Type cast
     /*
     {

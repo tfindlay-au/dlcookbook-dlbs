@@ -137,10 +137,10 @@ private:
     size_t num_shards_;
     size_t my_shard_;
 
-    size_t begin_;
-    size_t length_;
+    size_t begin_ = 0;
+    size_t length_ = 0;
 
-    size_t pos_;
+    size_t pos_ = 0;
     
     bool iterate_once_;
 public:
@@ -154,15 +154,33 @@ public:
     sharded_vector(std::vector<T>& vec, const size_t num_shards, const size_t my_shard,
                    const bool iterate_once=false) 
     : vec_(&vec), num_shards_(num_shards), my_shard_(my_shard), iterate_once_(iterate_once) {
-        length_ =  vec.size() / num_shards;
-        begin_ = pos_ = length_ * my_shard;
-        if (my_shard == num_shards - 1 && length_*num_shards != vec.size()) {
-            length_ = vec.size() - pos_;
+        size_t shard_idx(0),
+               shard_len(vec.size() / num_shards),
+               ctrl(vec.size() % num_shards);
+        
+        for (size_t shard=0; shard < num_shards; ++shard) {
+            size_t this_shard_len(0);
+            if (ctrl > 0) {
+                this_shard_len = shard_len + 1;
+                ctrl -= 1;
+            } else {
+                this_shard_len = shard_len;
+            }
+            if (my_shard == shard) {
+                length_ =  this_shard_len;
+                begin_ = pos_ = shard_idx;
+                break;
+            }
+            shard_idx += this_shard_len;
         }
+        if (length_ == 0) {
+            vec_ = nullptr;
+        }
+        
     }
     
     bool has_next() const {
-        return (!iterate_once_ || pos_ - begin_ < length_);
+        return (vec_ && (!iterate_once_ || pos_ - begin_ < length_));
     }
     
     T& next() {

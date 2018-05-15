@@ -25,6 +25,13 @@
 void tensor_dataset::prefetcher_func(tensor_dataset* myself,
                                      const size_t prefetcher_id, const size_t num_prefetchers) {
     sharded_vector<std::string> my_files(myself->file_names_, myself->prefetchers_.size(), prefetcher_id);
+    if (!my_files.has_next()) {
+        myself->logger_.log_warning(fmt(
+            "[prefetcher       %02d/%02d]: there is no work for me (number of files in dataset %d)",
+            prefetcher_id, num_prefetchers, int(myself->file_names_.size())
+        ));
+        return;
+    }
     std::ostringstream oss;
     oss << my_files;
     myself->logger_.log_info(fmt("[prefetcher       %02d/%02d]: %s", prefetcher_id, num_prefetchers, oss.str().c_str()));
