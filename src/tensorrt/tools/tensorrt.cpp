@@ -130,6 +130,11 @@ int main(int argc, char **argv) {
         if (data_opts.data_name_ == "images") {
             data = new image_dataset(data_opts, &infer_msg_pool, engine.request_queue(), logger);
         } else {
+            if (data_opts.data_name_ == "tensors1") {
+                data_opts.dtype_ = "uchar";
+            } else {
+                data_opts.dtype_ = "float";
+            }
             data = new tensor_dataset(data_opts, &infer_msg_pool, engine.request_queue(), logger);
         }
     }
@@ -232,7 +237,7 @@ void parse_command_line(int argc, char **argv,
             "not set the report_frequency and use no_batch_times, the app will still be "\
             "collecting batch times but will not log them.")
         ("data_dir", po::value<std::string>(&data_opts.data_dir_), "Path to a dataset.")
-        ("data_name", po::value<std::string>(&data_opts.data_name_), "Name of a dataset - 'images' or 'tensors'.")
+        ("data_name", po::value<std::string>(&data_opts.data_name_), "Name of a dataset - 'images', 'tensors1' or 'tensors4'.")
         ("resize_method", po::value<std::string>(&data_opts.resize_method_), "How to resize images: 'crop' or 'resize'.")
         ("num_prefetchers", po::value<int>(&num_prefetchers), "Number of prefetch threads (data readers).")
         ("prefetch_queue_size", po::value<int>(&prefetch_queue_size), "Number of batches to prefetch.")
