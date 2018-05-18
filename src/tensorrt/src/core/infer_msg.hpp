@@ -27,21 +27,29 @@
  */
 class inference_msg {
 private:
-    std::vector<float> input_;   //!< Input data of shape [BatchSize, ...]
-    std::vector<float> output_;  //!< Output data of shape [BatchSize, ...]
+    allocator* allocator_ = nullptr;
+
+    float *input_ = nullptr;   //!< Input data of shape [BatchSize, ...]
+    float *output_ = nullptr;  //!< Output data of shape [BatchSize, ...]
 
     size_t batch_size_ = 0;      //!< Number of instances in this infer message.
+    size_t input_size_ = 0;
+    size_t output_size_ = 0;
     
     float batch_time_ = 0;       //!< Total batch time including CPU <-> GPU transfer overhead
     float infer_time_ = 0;       //!< Inference time excluding data transfer overhead
     
     int gpu_ = 0;                //!< GPU that processed this task.
 public:
-    std::vector<float>& input() { return input_; }
-    std::vector<float>& output() { return output_; }
+    float* input() { return input_; }
+    float* output() { return output_; }
+    
+    size_t input_size() const { return input_size_; }
+    size_t output_size() const { return output_size_; }
+
     size_t batch_size() const { return batch_size_; }
-    float batch_time() const { return batch_time_; }
-    float infer_time() const { return infer_time_; }
+    float  batch_time() const { return batch_time_; }
+    float  infer_time() const { return infer_time_; }
     
     void set_batch_time(const float batch_time) { batch_time_ = batch_time; };
     void set_infer_time(const float infer_time) { infer_time_ = infer_time; };
@@ -52,21 +60,30 @@ public:
      * @param output_size Number of elements in one output data point
      * @param randomize_input If true, randomly initialize input tensor.
      */
-    inference_msg(const size_t batch_size,
-                  const size_t input_size, const size_t output_size,
-                  const bool randomize_input=false) {
-        batch_size_ = batch_size;
-        input_.resize(batch_size * input_size);
-        output_.resize(batch_size * output_size);
+    inference_msg(const size_t batch_size, const size_t input_size, const size_t output_size,
+                  allocator& alloc, const bool randomize_input=false) : allocator_(&alloc),
+                                                                        batch_size_(batch_size),
+                                                                        input_size_(input_size),
+                                                                        output_size_(output_size) {
+        allocator_->allocate(input_, batch_size_ * input_size_);
+        allocator_->allocate(output_, batch_size_ * output_size_);
         if (randomize_input) {
             random_input();
         }
+    }
+    inference_msg(const inference_msg&) = delete;
+    inference_msg(const inference_msg&&) = delete;
+    inference_msg& operator=(const inference_msg&) = delete;
+    
+    virtual ~inference_msg() {
+        allocator_->deallocate(input_);
+        allocator_->deallocate(output_);
     }
     /**
      * @brief Fill input tensor with random data 
      * uniformly distributed in [0, 1]
      */
-    void random_input() { fill_random(input_); }
+    void random_input() { fill_random(input_, batch_size_ * input_size_); }
 };
 
 
@@ -91,9 +108,9 @@ public:
      *                    Usually, it's the same as numebr of neural network outputs (classes).
      */
     inference_msg_pool(const int count, const size_t batch_size, const size_t input_size, const size_t output_size,
-                       const bool randomize_input=false) {
+                       allocator& alloc, const bool randomize_input=false) {
         for (int i=0; i<count; ++i) {
-            inference_msg *msg= new inference_msg(batch_size, input_size, output_size, randomize_input);
+            inference_msg *msg= new inference_msg(batch_size, input_size, output_size, alloc, randomize_input);
             messages_.push_back(msg);
             free_messages_.push(msg);
         }

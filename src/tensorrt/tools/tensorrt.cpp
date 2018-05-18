@@ -105,6 +105,15 @@ int main(int argc, char **argv) {
     }
     logger.log_info(engine_opts);
     logger.log_info(data_opts);
+    //
+    allocator *alloc(nullptr);
+    if (get_env_var("TENSORRT_USE_PINNED_MEMORY") == "1") {
+        logger.log_info("[main                  ]: Creating pinned memory allocator.");
+        alloc = new pinned_memory_allocator();
+    } else {
+        logger.log_info("[main                  ]: Creating standard memory allocator.");
+        alloc = new standard_allocator();
+    }
     // Create pool of inference engines. All inference engines will be listening to data queue
     // for new inference requests. All engines will be exactly the same - model, batch size etc.
     // There will be a 1:1 mapping between GPU and inference engines.
@@ -115,7 +124,7 @@ int main(int argc, char **argv) {
     // to store input/output tensors so there will be no need to do memory allocations during benchmark.
     const float est_mp_mem = static_cast<float>(engine_opts.inference_queue_size_*(8+4+4+4+engine.batch_size()*(engine.input_size()+engine.output_size()))) / (1024*1024);
     logger.log_info("[main                  ]: Creating inference message pool with " + S(engine_opts.inference_queue_size_) + " messages, estimated memory is " + std::to_string(est_mp_mem) + " mb.");
-    inference_msg_pool infer_msg_pool(engine_opts.inference_queue_size_, engine.batch_size(), engine.input_size(), engine.output_size(), true);
+    inference_msg_pool infer_msg_pool(engine_opts.inference_queue_size_, engine.batch_size(), engine.input_size(), engine.output_size(), *alloc, true);
     // Create data provider. The data provider will spawn at least one thread. It will fetch free task objects
     // from pool of task objects, will populate them with data and will submit tasks to data queue. All
     // preprocessing logic needs to be implemented in data provider.
@@ -182,6 +191,7 @@ int main(int argc, char **argv) {
     logger.log_info("[main                  ]: Waiting for inference engine ...");
     engine.join();
     delete  data;  data = nullptr;
+    delete alloc;  alloc = nullptr;
     // Log final results.
     logger.log_info("[main                  ]: Reporting results");
     for (size_t i=0; i<num_engines; ++i) {

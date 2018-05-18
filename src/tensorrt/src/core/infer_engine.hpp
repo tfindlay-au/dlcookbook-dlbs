@@ -118,8 +118,7 @@ public:
     
     int engine_id() const { return engine_id_; }
     time_tracker* get_time_tracker() { return &tm_tracker_; }
-    
-    inference_msg* new_inferene_message(const bool random_input=false);
+
     void reset() { reset_ = true; }
     void stop()  { stop_ = true;  }
     void join();

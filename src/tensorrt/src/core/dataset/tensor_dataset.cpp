@@ -74,7 +74,7 @@ void tensor_dataset::prefetcher_func(tensor_dataset* myself,
 
             // Try to read as many images in one read call as we need
             const ssize_t read_count  = bfile.read(
-                output->input().data() + img_size * num_images_in_batch,
+                output->input() + img_size * num_images_in_batch,
                 img_size * (output->batch_size() - num_images_in_batch)
             );
             // If nothing has been loaded, go to a next file
@@ -130,7 +130,8 @@ float tensor_dataset::benchmark(const std::string dir, const size_t batch_size, 
     opts.shuffle_files_ = true;
     opts.dtype_ = dtype;
         
-    inference_msg_pool pool(num_infer_msgs, opts.prefetch_batch_size_, 3*opts.height_*opts.width_, 1000);
+    standard_allocator alloc;
+    inference_msg_pool pool(num_infer_msgs, opts.prefetch_batch_size_, 3*opts.height_*opts.width_, 1000, alloc);
     thread_safe_queue<inference_msg*> request_queue;
     tensor_dataset data(opts, &pool, &request_queue, logger);
         

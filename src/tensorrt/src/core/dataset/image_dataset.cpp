@@ -111,7 +111,7 @@ void image_dataset::decoder_func(image_dataset* myself, const int decoder_id, co
                     std::copy(
                         img.begin<float>(),
                         img.end<float>(),
-                        output->input().begin() + static_cast<std::vector<float>::difference_type>(image_size) * static_cast<std::vector<float>::difference_type>(output_cursor)
+                        output->input() + static_cast<std::vector<float>::difference_type>(image_size) * static_cast<std::vector<float>::difference_type>(output_cursor)
                     );
                     input_cursor ++;
                     output_cursor ++;
@@ -188,7 +188,8 @@ float image_dataset::benchmark(const std::string dir, const size_t batch_size, c
     opts.shuffle_files_ = true;
     opts.prefetch_queue_size_ = 6;
         
-    inference_msg_pool pool(num_infer_msgs, opts.prefetch_batch_size_, 3*opts.height_*opts.width_, 1000);
+    standard_allocator alloc;
+    inference_msg_pool pool(num_infer_msgs, opts.prefetch_batch_size_, 3*opts.height_*opts.width_, 1000, alloc);
     thread_safe_queue<inference_msg*> request_queue;
     image_dataset data(opts, &pool, &request_queue, logger);
         

@@ -33,7 +33,7 @@
  * @brief Fill vector with random numbers uniformly dsitributed in [0, 1).
  * @param vec Vector to initialize.
  */
-void fill_random(std::vector<float>& vec);
+void fill_random(float *vec, const size_t sz);
 
 /**
  * @brief A short wrapper for std::to_string conversion.
@@ -43,6 +43,9 @@ std::string S(const T &t) { return std::to_string(t); }
 
 template<>
 std::string S<bool>(const bool &t);
+
+std::string get_env_var(std::string const &var);
+
 
 /**
  * @brief The 'printf' like string formatting.
@@ -324,6 +327,25 @@ public:
     void close();
     ssize_t read(float* dest, const size_t count);
     void allocate_if_needed(const size_t count);
+};
+
+class allocator {
+public:
+    virtual void allocate(float *&buf, const size_t sz) = 0;
+    virtual void deallocate(float *&buf) = 0;
+};
+
+class standard_allocator : public  allocator {
+public:
+    void allocate(float *&buf, const size_t sz) override {
+        buf = new float[sz];
+    }
+    void deallocate(float *&buf) override {
+        if (buf) {
+            delete [] buf;
+            buf = nullptr;
+        }
+    }
 };
 
 #endif

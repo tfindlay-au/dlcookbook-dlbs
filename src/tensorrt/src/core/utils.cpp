@@ -25,12 +25,17 @@
 template<>
 std::string S<bool>(const bool &t) { return (t ? "true" : "false"); }
 
-void fill_random(std::vector<float>& vec) {
+void fill_random(float *vec, const size_t sz) {
   std::random_device rnd_device;
   std::mt19937 mersenne_engine(rnd_device());
   std::uniform_real_distribution<float> dist(0.0f, 1.0f);
   auto gen = std::bind(dist, mersenne_engine);
-  std::generate(std::begin(vec), std::end(vec), gen);
+  std::generate(vec, vec+sz, gen);
+}
+
+std::string get_env_var(std::string const &var) {
+    char *val = getenv( var.c_str() );
+    return val == nullptr ? "" : std::string(val);
 }
 
 

@@ -41,7 +41,7 @@ int main(int argc, char **argv) {
     // Test Random
     {
         std::vector<float> vec (100, 0);
-        fill_random(vec);
+        fill_random(vec.data(), vec.size());
         std::sort(vec.begin(), vec.end());
         const auto mean = std::accumulate(vec.begin(), vec.end(), 0.0) / vec.size();
         std::cout << "Test Random vector mean is: " << mean << ", min=" << vec.front() << ", max=" << vec.back() << std::endl;

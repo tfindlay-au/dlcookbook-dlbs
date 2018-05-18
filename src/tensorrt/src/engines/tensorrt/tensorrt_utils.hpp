@@ -18,6 +18,7 @@
 #define DLBS_TENSORRT_BACKEND_ENGINES_TENSORRT_TENSORRT_UTILS
 
 #include "core/logger.hpp"
+#include "core/utils.hpp"
 
 #include <NvInfer.h>
 #include <cuda_runtime.h>
@@ -37,6 +38,17 @@ inline void cudaCheckf(const cudaError_t code, const char *file, const int line,
   }
 }
 
-
+class pinned_memory_allocator : public  allocator {
+public:
+    void allocate(float *&buf, const size_t sz) override {
+        cudaCheck(cudaHostAlloc(&buf, sz*sizeof(float), cudaHostAllocPortable|cudaHostAllocWriteCombined));
+    }
+    void deallocate(float *&buf) override {
+        if (buf) {
+            cudaCheck(cudaFreeHost(buf));
+            buf = nullptr;
+        }
+    }
+};
 
 #endif

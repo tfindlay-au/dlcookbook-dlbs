@@ -97,7 +97,7 @@ public:
         //
         if (next_batch_ >= num_batches_) { return false; }
         //
-        fill_random(host_batch_);
+        fill_random(host_batch_.data(), host_batch_.size());
         cudaCheck(cudaMemcpy(gpu_batch_, host_batch_.data(), sizeof(float) * host_batch_.size(), cudaMemcpyHostToDevice));
         bindings[0] = gpu_batch_;
         next_batch_ ++;

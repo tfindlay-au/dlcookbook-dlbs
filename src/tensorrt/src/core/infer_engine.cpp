@@ -49,13 +49,6 @@ void inference_engine::thread_func(abstract_queue<inference_msg*>& request_queue
     ));
 }
 
-inference_msg* inference_engine::new_inferene_message(const bool random_input) {
-    inference_msg *msg = new inference_msg(batch_sz_, input_sz_, output_sz_);
-    if (random_input)
-        msg->random_input();
-    return msg;
-}
-
 void inference_engine::join() {
     if (internal_thread_ && internal_thread_->joinable())
         internal_thread_->join();
