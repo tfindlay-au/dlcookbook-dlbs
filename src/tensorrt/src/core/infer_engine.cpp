@@ -32,21 +32,7 @@ std::ostream &operator<<(std::ostream &os, inference_engine_opts const &opts) {
 void inference_engine::thread_func(abstract_queue<inference_msg*>& request_queue,
                                    abstract_queue<inference_msg*>& response_queue,
                                    inference_engine* engine) {
-    engine->init_device();
-    running_average fetch, process, submit;
-    try {
-        timer clock;
-        while (!engine->stop_) {
-            clock.restart();  inference_msg *msg = request_queue.pop();  fetch.update(clock.ms_elapsed());
-            clock.restart();  engine->infer(msg);                        process.update(clock.ms_elapsed());
-            clock.restart();  response_queue.push(msg);                  submit.update(clock.ms_elapsed());
-        }
-    } catch(queue_closed) {
-    }
-    engine->logger_.log_info(fmt(
-        "[inference engine %02d/%02d]: {fetch:%.5f}-->--[process:%.5f]-->--{submit:%.5f}",
-        abs(engine->engine_id_), engine->num_engines_, fetch.value(), process.value(), submit.value()
-    ));
+    engine->do_inference(request_queue, response_queue);
 }
 
 void inference_engine::join() {
@@ -61,4 +47,23 @@ void inference_engine::start(abstract_queue<inference_msg*>& request_queue, abst
         std::ref(response_queue),
         this
     );
+}
+
+
+void fake_inference_engine::do_inference(abstract_queue<inference_msg*>& request_queue, abstract_queue<inference_msg*>& response_queue) {
+    init_device();
+    running_average fetch, submit;
+    try {
+        timer clock;
+        while (!stop_) {
+            clock.restart();  inference_msg *msg = request_queue.pop();  fetch.update(clock.ms_elapsed());
+            msg->set_gpu(engine_id_);
+            clock.restart();  response_queue.push(msg);                  submit.update(clock.ms_elapsed());
+        }
+    } catch(queue_closed) {
+    }
+    logger_.log_info(fmt(
+        "[inference engine %02d/%02d]: {fetch:%.5f}-->--{submit:%.5f}",
+        abs(engine_id_), num_engines_, fetch.value(), submit.value()
+    ));
 }

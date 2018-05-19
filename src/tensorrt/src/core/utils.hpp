@@ -265,8 +265,20 @@ public:
 
     void batch_started() {batch_timer_.restart();};
     void infer_started() {infer_timer_.restart();};
-    void infer_done()  {infer_times_.push_back(infer_timer_.ms_elapsed());};
-    void batch_done()  {batch_times_.push_back(batch_timer_.ms_elapsed());};
+    void infer_done(const float ms = -1)  {
+        if (ms >= 0) {
+            infer_times_.push_back(ms);
+        } else {
+            infer_times_.push_back(infer_timer_.ms_elapsed());
+        }
+    };
+    void batch_done(const float ms = -1)  {
+        if (ms >= 0) {
+            batch_times_.push_back(ms);
+        } else {
+            batch_times_.push_back(batch_timer_.ms_elapsed());
+        }
+    };
     /** @brief Start new iteration*/
     void new_iteration() { iter_idx_ = infer_times_.size(); }
     

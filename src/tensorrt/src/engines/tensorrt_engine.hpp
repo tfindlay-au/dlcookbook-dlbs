@@ -31,18 +31,20 @@ private:
     ICudaEngine* engine_ = nullptr;
     IExecutionContext* exec_ctx_ = nullptr;
     
-    std::vector<void*> dev_buf_;
-    size_t input_idx_ = 0;
-    size_t output_idx_ = 0;
+    std::vector<void*> bindings_;      // Input/output data in GPU memort.
+    size_t input_idx_ = 0;             // Index of input data in gpu_mem_.
+    size_t output_idx_ = 0;            // Index of output data in gpu_mem_.
 private:
-    void init_device_memory();
+    void copy_input_to_gpu_asynch(inference_msg *msg, cudaStream_t stream);
+    
+    void init_device() override;
+    void do_inference(abstract_queue<inference_msg*> &request_queue,
+                      abstract_queue<inference_msg*> &response_queue);
 public:
     profiler_impl* profiler() { return profiler_; }
     tensorrt_inference_engine(const int engine_id, const int num_engines,
                               logger_impl& logger, const inference_engine_opts& opts);
     ~tensorrt_inference_engine();
-    void init_device() override;
-    void infer(inference_msg *msg) override;
 };
 
 #endif

@@ -16,7 +16,7 @@
 
 #ifndef DLBS_TENSORRT_BACKEND_ENGINES_TENSORRT_TENSORRT_UTILS
 #define DLBS_TENSORRT_BACKEND_ENGINES_TENSORRT_TENSORRT_UTILS
-
+#include <initializer_list>
 #include "core/logger.hpp"
 #include "core/utils.hpp"
 
@@ -49,6 +49,36 @@ public:
             buf = nullptr;
         }
     }
+};
+
+class cuda_helper {
+private:
+    std::map<std::string, cudaEvent_t> events_;
+    std::map<std::string, cudaStream_t> streams_;
+public:
+    cuda_helper(const std::initializer_list<std::string>& events, const std::initializer_list<std::string>& streams);
+    virtual ~cuda_helper() { destroy(); }
+    
+    void destroy();
+    
+    cudaEvent_t& event(const std::string& name) { return events_[name]; }
+    cudaStream_t& stream(const std::string& name) { return streams_[name]; }
+    
+    void synch_stream(const std::string& name) { 
+        cudaCheck(cudaStreamSynchronize(streams_[name]));
+    }
+    void synch_event(const std::string& name)  {
+        cudaCheck(cudaEventSynchronize(events_[name]));
+    }
+    void record_event(const std::string& event, const std::string& stream) {
+        cudaCheck(cudaEventRecord(events_[event], streams_[stream]));
+    }
+    float duration(const std::string& start, const std::string& stop) {
+        float ms(0);
+        cudaEventElapsedTime(&ms, events_[start], events_[stop]);
+        return ms;
+    }
+    
 };
 
 #endif

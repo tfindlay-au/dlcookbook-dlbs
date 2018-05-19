@@ -111,6 +111,10 @@ private:
     static void thread_func(abstract_queue<inference_msg*>& request_queue,
                             abstract_queue<inference_msg*>& response_queue,
                             inference_engine* engine);
+    
+    virtual void init_device() = 0;
+    virtual void do_inference(abstract_queue<inference_msg*>& request_queue,
+                              abstract_queue<inference_msg*>& response_queue) = 0;
 public:
     size_t batch_size() const { return batch_sz_; }
     size_t input_size() const { return input_sz_; }
@@ -141,9 +145,6 @@ public:
     }
     
     void start(abstract_queue<inference_msg*>& request_queue, abstract_queue<inference_msg*>& response_queue);
-    
-    virtual void init_device() = 0;
-    virtual void infer(inference_msg *msg) = 0;
 };
 
 
@@ -152,12 +153,14 @@ public:
  * Can be useful to benchmark various data ingestion components.
  */
 class fake_inference_engine : public inference_engine {
+private:
+    void init_device() override {}
+    void do_inference(abstract_queue<inference_msg*>& request_queue,
+                      abstract_queue<inference_msg*>& response_queue) override;
 public:
     fake_inference_engine(const int engine_id, const int num_engines,
                           logger_impl & logger, const inference_engine_opts& opts)
         : inference_engine(engine_id, num_engines_, logger, opts) {}
-    void init_device() override {}
-    void infer(inference_msg *msg) override {};
 };
 
 

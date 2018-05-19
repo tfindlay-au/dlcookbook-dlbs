@@ -72,3 +72,29 @@ size_t get_binding_size(ICudaEngine* engine, const int idx) {
   return dims.c * dims.h * dims.w;
 #endif
 }
+
+
+cuda_helper::cuda_helper(const std::initializer_list<std::string>& events, const std::initializer_list<std::string>& streams) {
+   for (const auto event: events) {
+       cudaEvent_t cuda_event;
+       cudaCheck(cudaEventCreate(&cuda_event)); 
+       events_[event] = cuda_event;
+   }
+   for (const auto stream: streams) {
+       cudaStream_t cuda_strream;
+       cudaCheck(cudaStreamCreate(&cuda_strream)); 
+       streams_[stream] = cuda_strream;
+   }
+}
+void cuda_helper::destroy() {
+    for (auto& event: events_) {
+        cudaCheck(cudaEventDestroy(event.second));
+    }
+    events_.clear();
+
+    for (auto& stream: streams_) {
+        cudaCheck(cudaStreamSynchronize(stream.second));
+        cudaCheck(cudaStreamDestroy(stream.second));
+    }
+    streams_.clear();
+}

@@ -39,7 +39,7 @@ private:
     float batch_time_ = 0;       //!< Total batch time including CPU <-> GPU transfer overhead
     float infer_time_ = 0;       //!< Inference time excluding data transfer overhead
     
-    int gpu_ = 0;                //!< GPU that processed this task.
+    int gpu_ = -1;               //!< GPU that processed this task.
 public:
     float* input() { return input_; }
     float* output() { return output_; }
@@ -53,6 +53,7 @@ public:
     
     void set_batch_time(const float batch_time) { batch_time_ = batch_time; };
     void set_infer_time(const float infer_time) { infer_time_ = infer_time; };
+    void set_gpu(const int gpu) { gpu_ = gpu; }
     /**
      * @brief Construct and initialize inference task.
      * @param batch_size Number of instances in this infer message.
