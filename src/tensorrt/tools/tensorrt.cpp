@@ -190,6 +190,7 @@ int main(int argc, char **argv) {
     data->join();
     logger.log_info("[main                  ]: Waiting for inference engine ...");
     engine.join();
+    infer_msg_pool.destroy();        // This is not very good. It must be destroyed before we delete allocator.
     delete  data;  data = nullptr;
     delete alloc;  alloc = nullptr;
     // Log final results.

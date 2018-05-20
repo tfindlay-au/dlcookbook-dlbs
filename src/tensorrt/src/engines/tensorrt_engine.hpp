@@ -40,6 +40,17 @@ private:
     void init_device() override;
     void do_inference(abstract_queue<inference_msg*> &request_queue,
                       abstract_queue<inference_msg*> &response_queue);
+    // Past implementations
+    /**
+     * @brief Original implementation that does everything sequentially:
+     *    - Fetch inference request
+     *    - Copy to GPU
+     *    - Run Inference
+     *    - Copy back to host
+     *    - Submit results
+     */
+    void do_inference1(abstract_queue<inference_msg*> &request_queue,
+                       abstract_queue<inference_msg*> &response_queue);
 public:
     profiler_impl* profiler() { return profiler_; }
     tensorrt_inference_engine(const int engine_id, const int num_engines,

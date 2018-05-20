@@ -140,6 +140,7 @@ tensorrt_inference_engine::~tensorrt_inference_engine() {
 }
     
 void tensorrt_inference_engine::init_device() {
+    const auto me = fmt("[inference engine %02d/%02d]:", engine_id_, num_engines_);
     cudaCheck(cudaSetDevice(engine_id_));
     cudaCheck(cudaMalloc(&(bindings_[input_idx_]),  sizeof(float) * batch_sz_ * input_sz_));
     cudaCheck(cudaMalloc(&(bindings_[output_idx_]), sizeof(float) * batch_sz_ * output_sz_));
@@ -157,20 +158,30 @@ void tensorrt_inference_engine::copy_input_to_gpu_asynch(inference_msg *msg ,cud
 
 void tensorrt_inference_engine::do_inference(abstract_queue<inference_msg*> &request_queue,
                                              abstract_queue<inference_msg*> &response_queue) {
+    init_device();
+    if (get_env_var("TENSORRT_INFERENCE_IMPL_VER") == "1") {
+        do_inference1(request_queue, response_queue);
+        return;
+    }
+    const std::string me = fmt("[inference engine %02d/%02d]", abs(engine_id_), num_engines_);
+    logger_.log_info(me + ": Version of inference engine is latest");
     // If it's true, the code below will be overlaping
     // copy/compute ops. This makes sense when time to fetch data fro, request queue
     // is very small. If it's large (greater than inference time), you may want to do
     // everything sequentially.
-    const std::string me = fmt("[inference engine %02d/%02d]", abs(engine_id_), num_engines_);
     const bool overlap_copy_compute = (get_env_var("TENSORRT_DO_NOT_OVERLAP_COPY_COMPUTE") != "1");
     logger_.log_info(me + ": overlap copy and compute " + S(overlap_copy_compute));
     cuda_helper helper({"input_consumed","infer_start","infer_stop"}, {"copy","compute"});
     running_average fetch, process, submit;
     try {
-        init_device();
         inference_msg *current_msg(nullptr), *next_msg(nullptr);
         timer clock, curr_batch_clock, next_batch_clock, infer_clock;
         while(!stop_) {
+            if (reset_) {
+                reset_ = false;
+                if (profiler_) profiler_->reset();
+                tm_tracker_.reset();
+            }
             //
             if (!current_msg) {
                 clock.restart();  current_msg = request_queue.pop();  fetch.update(clock.ms_elapsed());
@@ -197,12 +208,14 @@ void tensorrt_inference_engine::do_inference(abstract_queue<inference_msg*> &req
             process.update(infer_clock.ms_elapsed());                               // Actual time it took to process.
             tm_tracker_.infer_done(helper.duration("infer_start", "infer_stop"));   // Inference GPU time.
             current_msg->set_infer_time(tm_tracker_.last_infer_time());
-            cudaCheck(cudaMemcpy(
+            cudaCheck(cudaMemcpyAsync(
                 current_msg->output(),
                 bindings_[output_idx_],
                 sizeof(float)*current_msg->output_size()*current_msg->batch_size(),
-                cudaMemcpyDeviceToHost
+                cudaMemcpyDeviceToHost,
+                helper.stream("compute")
             ));
+            helper.synch_stream("compute");
             tm_tracker_.batch_done(curr_batch_clock.ms_elapsed());                  // Actual batch time (remember, batches overlap)
             current_msg->set_batch_time(tm_tracker_.last_batch_time());
             // Send response and update current message (if not overlap_copy_compute, next_msg is nullptr here).
@@ -215,6 +228,45 @@ void tensorrt_inference_engine::do_inference(abstract_queue<inference_msg*> &req
     }catch (queue_closed) {
     }
     helper.destroy();
+    logger_.log_info(fmt("%s: {fetch:%.5f}-->--[process:%.5f]-->--{submit:%.5f}", me.c_str(), fetch.value(), process.value(), submit.value()));
+}
+
+void tensorrt_inference_engine::do_inference1(abstract_queue<inference_msg*> &request_queue,
+                                              abstract_queue<inference_msg*> &response_queue) {
+    const std::string me = fmt("[inference engine %02d/%02d]", abs(engine_id_), num_engines_);
+    logger_.log_info(me + ": Version of inference engine is 1");
+    running_average fetch, process, submit;
+    try {
+        inference_msg *msg(nullptr);
+        timer clock;
+        while(!stop_) {
+            if (reset_) {
+                reset_ = false;
+                if (profiler_) profiler_->reset();
+                tm_tracker_.reset();
+            }
+            //
+            clock.restart();  msg = request_queue.pop();  fetch.update(clock.ms_elapsed());
+            // Copy Input Data to the GPU.
+            tm_tracker_.batch_started();
+            cudaCheck(cudaMemcpy(bindings_[input_idx_], msg->input(), sizeof(float)*msg->input_size(), cudaMemcpyHostToDevice));
+            // Launch an instance of the GIE compute kernel.
+            tm_tracker_.infer_started();
+            if(!exec_ctx_->execute(batch_sz_, bindings_.data())) {logger_.log_error("Kernel was not run");}
+            tm_tracker_.infer_done();
+            // Copy Output Data to the Host.
+            cudaCheck(cudaMemcpy(msg->output(), bindings_[output_idx_], sizeof(float)*msg->output_size(), cudaMemcpyDeviceToHost));
+            tm_tracker_.batch_done();
+            //
+            process.update(tm_tracker_.last_batch_time());
+            msg->set_infer_time(tm_tracker_.last_infer_time());
+            msg->set_batch_time(tm_tracker_.last_batch_time());
+            nbatches_ ++;
+            //
+            clock.restart();  response_queue.push(msg);  submit.update(clock.ms_elapsed());
+        }
+    }catch (queue_closed) {
+    }
     logger_.log_info(fmt("%s: {fetch:%.5f}-->--[process:%.5f]-->--{submit:%.5f}", me.c_str(), fetch.value(), process.value(), submit.value()));
 }
 

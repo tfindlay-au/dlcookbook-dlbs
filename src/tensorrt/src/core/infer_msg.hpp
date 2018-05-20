@@ -117,9 +117,13 @@ public:
         }
     }
     ~inference_msg_pool() {
+        destroy();
+    }
+    void destroy() {
         for (size_t i=0; i<messages_.size(); ++i) {
             delete messages_[i];
         }
+        messages_.clear();
     }
     //!< Get new task. The taks may or may not contain data from previous inference.
     //!< You should try to reuse memory allocated for this task.

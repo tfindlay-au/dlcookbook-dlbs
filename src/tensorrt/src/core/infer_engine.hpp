@@ -141,7 +141,10 @@ public:
           stop_(false), reset_(false) {}
     
     virtual ~inference_engine() {
-        if (internal_thread_) delete internal_thread_;
+        if (internal_thread_) {
+            delete internal_thread_;
+            internal_thread_ = nullptr;
+        }
     }
     
     void start(abstract_queue<inference_msg*>& request_queue, abstract_queue<inference_msg*>& response_queue);
