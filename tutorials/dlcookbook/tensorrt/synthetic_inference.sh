@@ -12,12 +12,15 @@ loglevel=warning
 rm -rf ./logs/synthetic
 python $dlbs run \
        --log-level=$loglevel\
-       -Vexp.gpus='["0", "0,1", "0,1,2,3", "0,1,2,3,4,5,6,7"]'\
-       -Vexp.model='["alexnet_owt"]'\
-       -Pexp.replica_batch=512\
-       -Pexp.num_warmup_batches=50\
-       -Pexp.num_batches=300\
-       -Ptensorrt.inference_queue_size=32\
+       -Ptensorrt.data_dir='""'\
+       -Pexp.dtype='"int8"'\
+       -Pruntime.launcher='"TENSORRT_USE_PINNED_MEMORY=1 TENSORRT_INFERENCE_IMPL_VER=0"'\
+       -Vexp.gpus='["0"]'\
+       -Vexp.model='["resnet50"]'\
+       -Pexp.replica_batch=128\
+       -Pexp.num_warmup_batches=20\
+       -Pexp.num_batches=250\
+       -Ptensorrt.inference_queue_size=8\
        -Pexp.log_file='"${BENCH_ROOT}/logs/synthetic/${exp.model}_${exp.num_gpus}.log"'\
        -Pexp.phase='"inference"'\
        -Pexp.docker=true\

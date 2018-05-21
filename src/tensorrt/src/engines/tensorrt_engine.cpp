@@ -249,13 +249,13 @@ void tensorrt_inference_engine::do_inference1(abstract_queue<inference_msg*> &re
             clock.restart();  msg = request_queue.pop();  fetch.update(clock.ms_elapsed());
             // Copy Input Data to the GPU.
             tm_tracker_.batch_started();
-            cudaCheck(cudaMemcpy(bindings_[input_idx_], msg->input(), sizeof(float)*msg->input_size(), cudaMemcpyHostToDevice));
+            cudaCheck(cudaMemcpy(bindings_[input_idx_], msg->input(), sizeof(float)*msg->input_size()*msg->batch_size(), cudaMemcpyHostToDevice));
             // Launch an instance of the GIE compute kernel.
             tm_tracker_.infer_started();
             if(!exec_ctx_->execute(batch_sz_, bindings_.data())) {logger_.log_error("Kernel was not run");}
             tm_tracker_.infer_done();
             // Copy Output Data to the Host.
-            cudaCheck(cudaMemcpy(msg->output(), bindings_[output_idx_], sizeof(float)*msg->output_size(), cudaMemcpyDeviceToHost));
+            cudaCheck(cudaMemcpy(msg->output(), bindings_[output_idx_], sizeof(float)*msg->output_size()*msg->batch_size(), cudaMemcpyDeviceToHost));
             tm_tracker_.batch_done();
             //
             process.update(tm_tracker_.last_batch_time());

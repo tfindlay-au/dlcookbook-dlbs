@@ -26,9 +26,9 @@ do
            -Pexp.replica_batch=512\
            -Pexp.num_warmup_batches=100\
            -Pexp.num_batches=400\
-           -Pexp.data_dir='"/lvol/serebrya/datasets/tensorrt"'\
+           -Pexp.data_dir='"/lvol/serebrya/datasets/tensorrt8196_2"'\
            -Ptensorrt.data_name='"tensors"'\
-           -Ptensorrt.num_prefetchers=3\
+           -Ptensorrt.num_prefetchers=4\
            -Ptensorrt.num_decoders=2\
            -Ptensorrt.prefetch_queue_size=32\
            -Ptensorrt.prefetch_batch_size=32\

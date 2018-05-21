@@ -155,9 +155,9 @@ void fs_utils::initialize_dataset(std::string& data_dir, std::vector<std::string
         std::cout << "[image_provider        ]: found " + S(files.size()) +  " image files in file system." << std::endl;
         fs_utils::get_image_files(data_dir, files);
         if (!files.empty()) {
-            if (!fs_utils::write_cache(data_dir, files)) {
-                std::cout << "[image_provider        ]: failed to write file cache." << std::endl;
-            }
+            //if (!fs_utils::write_cache(data_dir, files)) {
+            //    std::cout << "[image_provider        ]: failed to write file cache." << std::endl;
+            //}
         }
     } else {
         std::cout << "[image_provider        ]: read " + S(files.size()) +  " from cache." << std::endl;
