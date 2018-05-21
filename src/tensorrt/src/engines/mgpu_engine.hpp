@@ -76,6 +76,10 @@ public:
         } 
     }
     void join() { for(auto& engine : engines_) { engine->join(); } }
+    
+    
+    void pause() { for(auto& engine : engines_) { engine->pause(); } }
+    void resume() { for(auto& engine : engines_) { engine->resume(); } }
 };
 
 #endif

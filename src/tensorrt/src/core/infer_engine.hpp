@@ -105,6 +105,7 @@ protected:
     
     std::atomic_bool stop_;
     std::atomic_bool reset_;
+    std::atomic_bool paused_;
  
     std::thread *internal_thread_ = nullptr;
 private:
@@ -127,6 +128,9 @@ public:
     void stop()  { stop_ = true;  }
     void join();
     
+    void pause() { paused_ = true; }
+    void resume() { paused_ = false; }
+    
     /**
      * @brief Create an instance of inference engine. MUST be called from the main thread.
      * 
@@ -138,7 +142,7 @@ public:
     inference_engine(const int engine_id, const int num_engines, logger_impl& logger, const inference_engine_opts& opts)
         : engine_id_(engine_id), num_engines_(num_engines), logger_(logger), tm_tracker_(opts.num_batches_),
           batch_sz_(opts.batch_size_), input_sz_(3 * 227 * 227), output_sz_(1000),
-          stop_(false), reset_(false) {}
+          stop_(false), reset_(false), paused_(false) {}
     
     virtual ~inference_engine() {
         if (internal_thread_) {

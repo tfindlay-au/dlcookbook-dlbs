@@ -182,6 +182,10 @@ void tensorrt_inference_engine::do_inference(abstract_queue<inference_msg*> &req
                 if (profiler_) profiler_->reset();
                 tm_tracker_.reset();
             }
+            if (paused_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
             //
             if (!current_msg) {
                 clock.restart();  current_msg = request_queue.pop();  fetch.update(clock.ms_elapsed());
@@ -244,6 +248,10 @@ void tensorrt_inference_engine::do_inference1(abstract_queue<inference_msg*> &re
                 reset_ = false;
                 if (profiler_) profiler_->reset();
                 tm_tracker_.reset();
+            }
+            if (paused_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
             }
             //
             clock.restart();  msg = request_queue.pop();  fetch.update(clock.ms_elapsed());

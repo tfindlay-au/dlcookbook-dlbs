@@ -56,6 +56,10 @@ void fake_inference_engine::do_inference(abstract_queue<inference_msg*>& request
     try {
         timer clock;
         while (!stop_) {
+            if (paused_) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+                continue;
+            }
             clock.restart();  inference_msg *msg = request_queue.pop();  fetch.update(clock.ms_elapsed());
             msg->set_gpu(engine_id_);
             clock.restart();  response_queue.push(msg);                  submit.update(clock.ms_elapsed());
