@@ -28,6 +28,8 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <chrono>
+#include <sys/stat.h>
+#include <semaphore.h>
 
 /**
  * @brief Fill vector with random numbers uniformly dsitributed in [0, 1).
@@ -358,6 +360,36 @@ public:
             buf = nullptr;
         }
     }
+};
+
+/**
+ * @brief A simple multiprocess synchronization. If running with docker, use --ipc=host.
+ */
+class process_barrier {
+private:
+    std::string name_;
+    sem_t *handle_ = SEM_FAILED;
+    int rank_;
+    int count_;
+    bool post_mode_;
+private:
+    void init();
+public:
+    process_barrier(std::string specs);
+    process_barrier(const std::string& name, const int rank, const int count);
+    virtual ~process_barrier() {
+        close();
+    }
+    bool good() const { return handle_ != SEM_FAILED; }
+    int rank() const { return rank_; }
+    int count() const { return count_; }
+    /**
+     * @brief Waits until all processes reach a synchronization point.
+     * @return 0 on success; on error, -1 is returned, errno is set and process
+     *         barrier transitions to undefined state.
+     */
+    int wait();
+    void close();
 };
 
 #endif

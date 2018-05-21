@@ -107,7 +107,7 @@ int main(int argc, char **argv) {
     logger.log_info(data_opts);
     //
     allocator *alloc(nullptr);
-    if (get_env_var("TENSORRT_USE_PINNED_MEMORY") == "1") {
+    if (get_env_var("TENSORRT_DO_NOT_USE_PINNED_MEMORY") != "1") {
         logger.log_info("[main                  ]: Creating pinned memory allocator.");
         alloc = new pinned_memory_allocator();
     } else {
@@ -168,13 +168,23 @@ int main(int argc, char **argv) {
     // This reset will not happen immidiately, but next time an engine processes a batch.
     // So, they may reset their states at slightly different moments.
     engine.reset();
-
+    // Sync with othet processes if need to do so
+    process_barrier* barrier(nullptr);
+    timer synch_timer;
+    if (get_env_var("TENSORRT_SYNCH_BENCHMARKS") != "") {
+        barrier = new process_barrier(get_env_var("TENSORRT_SYNCH_BENCHMARKS"));
+        logger.log_info(fmt("[main                  ]: Synching with other processes (%d/%d)", barrier->rank(), barrier->count()));
+        barrier->wait();
+    }
+    // Run benchmarks
     logger.log_info("[main                  ]: Running benchmarks");
     time_tracker tm_tracker(engine_opts.num_batches_);
+    long num_processed_instances(0);    
     for (size_t i=0; i<engine_opts.num_batches_; ++i) {
         tm_tracker.batch_started();
         for (size_t j=0; j<num_engines; ++j) {
             inference_msg *msg = engine.response_queue()->pop();
+            num_processed_instances += msg->batch_size();
             infer_msg_pool.release(msg);
         }
         tm_tracker.batch_done();
@@ -182,6 +192,17 @@ int main(int argc, char **argv) {
             logger.log_progress(tm_tracker.get_batch_times(), tm_tracker.get_iter_idx(), engine_opts.batch_size_, "total_");
             tm_tracker.new_iteration();
         }
+    }
+    if (barrier) {
+        logger.log_info(fmt("[main                  ]: Synching with other processes (%d/%d)", barrier->rank(), barrier->count()));
+        barrier->wait();
+        logger.log_key_value(
+            "results.mgpu_effective_throughput",
+            1000.0 * num_processed_instances * barrier->count() / synch_timer.ms_elapsed()
+        );
+        barrier->close();
+        delete barrier;
+        barrier = nullptr;
     }
     // Shutdown everything and wait for all threads to exit.
     logger.log_info("[main                  ]: Stopping and joining threads");

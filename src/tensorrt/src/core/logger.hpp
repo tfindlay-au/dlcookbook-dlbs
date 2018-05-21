@@ -34,6 +34,8 @@ private:
     std::ostream& ostream_; //!< Output logging stream.
 public:
     explicit logger_impl(std::ostream& ostream=std::cout) : ostream_(ostream) {}
+    
+    void log_key_value(const std::string& key, const float value);
     /**
      * @brief Log intermidiate performance results This is usefull to estimate jitter online or when
      * running long lasting benchmarks.

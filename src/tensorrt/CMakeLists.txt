@@ -42,8 +42,12 @@ add_executable(tests_utils tests/tests_utils.cpp)
 target_link_libraries(tests_utils ${TENSORRT_LIBS})
 
 
-add_executable(tests_tensor_dataset tests/tests_tensor_dataset.cpp)
-target_link_libraries(tests_tensor_dataset ${TENSORRT_LIBS})
+add_executable(benchmark_tensor_dataset tools/benchmark_tensor_dataset.cpp)
+target_link_libraries(benchmark_tensor_dataset ${TENSORRT_LIBS})
+
+
+add_executable(tests_ipc tests/tests_ipc.cpp)
+target_link_libraries(tests_ipc ${TENSORRT_LIBS})
 
 
 add_executable(tensorrt tools/tensorrt.cpp)
@@ -65,7 +69,7 @@ if(Boost_FOUND)
     include_directories(${Boost_INCLUDE_DIRS})
     target_link_libraries(tensorrt ${Boost_LIBRARIES})
     target_link_libraries(images2tensors ${Boost_LIBRARIES})
-    target_link_libraries(tests_tensor_dataset ${Boost_LIBRARIES})
+    target_link_libraries(benchmark_tensor_dataset ${Boost_LIBRARIES})
 endif()
 
 find_package(OpenCV 2)
@@ -79,7 +83,8 @@ endif()
 
 install(TARGETS tensorrt RUNTIME DESTINATION bin)
 install(TARGETS images2tensors RUNTIME DESTINATION bin)
-install(TARGETS tests_tensor_dataset RUNTIME DESTINATION bin)
+install(TARGETS benchmark_tensor_dataset RUNTIME DESTINATION bin)
+install(TARGETS tests_ipc RUNTIME DESTINATION bin)
 
 
 if(NOT CMAKE_BUILD_TYPE)

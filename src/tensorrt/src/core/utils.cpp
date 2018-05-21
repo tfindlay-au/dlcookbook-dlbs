@@ -20,6 +20,9 @@
 #define _XOPEN_SOURCE 700
 #include <unistd.h>
 #include <fcntl.h>
+#include <chrono>
+#include <thread>
+#include <sstream>
 
 
 template<>
@@ -244,3 +247,64 @@ void binary_file::allocate_if_needed(const size_t count) {
         buffer_.resize(count);
     }
 }
+
+
+process_barrier::process_barrier(std::string specs) : post_mode_(true) {
+    std::replace(specs.begin(), specs.end(), ',', ' ');
+    std::istringstream is(specs);
+    is >> name_ >> count_ >> rank_;
+    name_ = "/" + name_;
+    init();
+}
+
+process_barrier::process_barrier(const std::string& name, const int rank, const int count) 
+: name_(name), rank_(rank), count_(count), post_mode_(true) {
+    init();
+}
+
+void process_barrier::init() {
+    if (rank_ == 0) {
+        handle_ = sem_open(name_.c_str(), O_CREAT|O_EXCL, S_IRUSR|S_IWUSR|S_IRGRP|S_IWGRP|S_IROTH|S_IWOTH, 0);
+    } else {
+        while (true) {
+            handle_ = sem_open(name_.c_str(), 0);
+            if (handle_ != SEM_FAILED || errno != ENOENT)
+                break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        }
+    }
+}
+
+int process_barrier::wait() {
+    if (handle_ == SEM_FAILED) {
+        return -1;
+    }
+    int target_value(0);
+    if (post_mode_) {
+        if (sem_post(handle_) < 0)
+            return -1;
+        target_value = count_;
+    } else {
+        if (sem_wait(handle_) < 0)
+            return -1;
+    }
+    int value(-1);
+    while (value != target_value) {
+        if (sem_getvalue(handle_, &value) < 0)
+            return -1;
+    }
+    post_mode_ = !post_mode_;
+    return 0;
+}
+
+void process_barrier::close() {
+    if (handle_ != SEM_FAILED) {
+        if (rank_ == 0) {
+            sem_unlink(name_.c_str());
+        }
+        sem_close(handle_);
+        handle_ = SEM_FAILED;
+    }
+}
+    
+    

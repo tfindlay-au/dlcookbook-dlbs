@@ -48,7 +48,7 @@ int main(int argc, char **argv) {
         num_prefetchers, prefetch_pool_size,
         num_warmup_batches, num_batches;
     // Parse command line options
-    po::options_description opt_desc("Test Tensor Datasets");
+    po::options_description opt_desc("Benchmark Tensor Datasets");
     po::variables_map var_map;
     opt_desc.add_options()
         ("help", "Print help message")

@@ -17,6 +17,11 @@
 #include "core/logger.hpp"
 
 
+void logger_impl::log_key_value(const std::string& key, const float value) {
+    std::lock_guard<std::mutex> lock(m_);
+    ostream_ << "__" << key << "__=" << value  << std::endl;
+}
+
 void logger_impl::log_progress(const std::vector<float>& times, const int iter_index,
                                const int data_size, const std::string& key_prefix) {
     if (times.empty()) return;
