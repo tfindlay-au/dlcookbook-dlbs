@@ -252,7 +252,7 @@ void binary_file::allocate_if_needed(const size_t count) {
 process_barrier::process_barrier(std::string specs) : post_mode_(true) {
     std::replace(specs.begin(), specs.end(), ',', ' ');
     std::istringstream is(specs);
-    is >> name_ >> count_ >> rank_;
+    is >> rank_ >> count_ >> name_;
     name_ = "/" + name_;
     init();
 }
