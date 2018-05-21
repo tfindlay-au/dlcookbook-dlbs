@@ -198,7 +198,7 @@ int main(int argc, char **argv) {
         barrier->wait();
         logger.log_key_value(
             "results.mgpu_effective_throughput",
-            1000.0 * num_processed_instances * barrier->count() / synch_timer.ms_elapsed()
+            1000.0 * num_processed_instances  / synch_timer.ms_elapsed()
         );
         barrier->close();
         delete barrier;
