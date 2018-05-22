@@ -10,22 +10,23 @@ loglevel=warning
 # Run multi-GPU inference with synthetic data.
 #------------------------------------------------------------------------------#
 rm -rf ./logs/synthetic
+
 python $dlbs run \
        --log-level=$loglevel\
        -Ptensorrt.data_dir='""'\
-       -Pexp.dtype='"int8"'\
-       -Pruntime.launcher='"TENSORRT_USE_PINNED_MEMORY=1 TENSORRT_INFERENCE_IMPL_VER=0"'\
-       -Vexp.gpus='["0"]'\
-       -Vexp.model='["resnet50"]'\
-       -Pexp.replica_batch=128\
-       -Pexp.num_warmup_batches=20\
-       -Pexp.num_batches=250\
-       -Ptensorrt.inference_queue_size=8\
-       -Pexp.log_file='"${BENCH_ROOT}/logs/synthetic/${exp.model}_${exp.num_gpus}.log"'\
+       -Pexp.dtype='"float16"'\
+       -Pruntime.launcher='"TENSORRT_INFERENCE_IMPL_VER=latest"'\
+       -Vexp.gpus='["0,1,2,3"]'\
+       -Vexp.model='["alexnet_owt"]'\
+       -Vexp.replica_batch='[64]'\
+       -Pexp.num_warmup_batches=50\
+       -Pexp.num_batches=500\
+       -Ptensorrt.inference_queue_size=32\
+       -Pexp.log_file='"${BENCH_ROOT}/logs/synthetic/${exp.model}_${exp.dtype}_${exp.replica_batch}_${exp.num_gpus}.log"'\
        -Pexp.phase='"inference"'\
        -Pexp.docker=true\
        -Pexp.docker_image='"hpe/tensorrt:cuda9-cudnn7"'\
        -Pexp.framework='"tensorrt"'
 
-params="exp.status,exp.framework_title,exp.effective_batch,results.time,results.throughput,exp.model_title"
+params="exp.status,exp.framework_title,exp.effective_batch,results.time,results.throughput,exp.model_title,exp.dtype,exp.gpus"
 python $parser ./logs/synthetic/*.log --output_params ${params}
