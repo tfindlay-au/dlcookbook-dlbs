@@ -5,7 +5,7 @@ export CUDA_CACHE_PATH=/dev/shm/cuda_cache
 # Convert raw images into a tensor representation.
 #------------------------------------------------------------------------------#
 input_dir=/lvol/serebrya/datasets/train                    # Path to an input data.
-output_dir=/lvol/serebrya/datasets/tensorrt_uchar_chunks   # Output folder.
+output_dir=/lvol/serebrya/datasets/tensorrt227/uchar/0     # Output folder.
 dtype=uchar                        # Type of matrix element in files (float - 4 bytes, uchar (unsigned char) - 1 byte)
 img_size=227                       # Size of output images. Now, it must be the same
                                    # size as accepted by a neural network model. With
