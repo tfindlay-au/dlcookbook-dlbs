@@ -155,9 +155,9 @@ int main(int argc, char **argv) {
     // Sync with othet processes if need to do so
     process_barrier* barrier(nullptr);
     timer synch_timer;
-    if (get_env_var("DLBS_TENSORRT_SYNCH_BENCHMARKS") == "1") {
+    if (get_env_var("DLBS_TENSORRT_SYNCH_BENCHMARKS") != "") {
         engine.pause();
-        barrier = new process_barrier(get_env_var("TENSORRT_SYNCH_BENCHMARKS"));
+        barrier = new process_barrier(get_env_var("DLBS_TENSORRT_SYNCH_BENCHMARKS"));
         logger.log_info(fmt("[main                  ]: Synching with other processes (%d/%d)", barrier->rank(), barrier->count()));
         barrier->wait();
         engine.resume();
