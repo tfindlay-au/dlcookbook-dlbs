@@ -131,6 +131,9 @@ int main(int argc, char **argv) {
         infer_msg_pool.destroy();
         delete data;
         delete alloc;
+        std::cout << "__exp.status__=\"failure\"" << std::endl;
+        std::cout << "__exp.status_msg__=\"Some of the dataset threads failed to start (no data or not enough data)."
+                  <<" Check path (" << data_opts.data_dir_ << ") and/or make sure number of files >= number of prefetchers.\"" << std::endl;
         logger.log_error("[main                  ]: Some of the dataset threads failed to start. Aborting.");
     }
     // Start pool of inference engines. This will start one thread per engine. Individual inference engines

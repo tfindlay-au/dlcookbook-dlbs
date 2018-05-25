@@ -221,6 +221,7 @@ int main(int argc, char **argv) {
         logger.log_info(fmt("images2tensors: Reducing number of images to convert to %d", nimages));
         file_names.resize(nimages);
     }
+    logger.log_info(fmt("images2tensors: Number of images per file is %d", images_per_file));
     
     // Convert and write
     output_dir = fs_utils::normalize_path(output_dir);

@@ -19,7 +19,7 @@
 bool dataset::start() {
     internal_thread_ = new std::thread(&dataset::thread_func, this);
     if (num_threads_ > 0) {
-        while (num_dead_threads_ == 0 || num_live_threads_ != num_threads_) {
+        while (num_dead_threads_ == 0 && num_live_threads_ != num_threads_) {
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
     }

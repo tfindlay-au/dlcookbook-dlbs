@@ -107,8 +107,7 @@ void tensor_dataset::prefetcher_func(tensor_dataset* myself,
 
 tensor_dataset::tensor_dataset(const dataset_opts& opts, inference_msg_pool* pool,
                                abstract_queue<inference_msg*>* request_queue, logger_impl& logger)
-: dataset(pool, request_queue, opts_.num_prefetchers_), opts_(opts), logger_(logger) {
-
+: dataset(pool, request_queue, static_cast<int>(opts.num_prefetchers_)), opts_(opts), logger_(logger) {
     fs_utils::initialize_dataset(opts_.data_dir_, file_names_);
     if (opts.shuffle_files_) {
         std::random_shuffle(file_names_.begin(), file_names_.end());
