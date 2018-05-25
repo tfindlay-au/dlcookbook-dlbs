@@ -63,44 +63,77 @@ tensorrt_inference_engine::tensorrt_inference_engine(const int engine_id, const 
     int prev_cuda_device(0);
     cudaCheck(cudaGetDevice(&prev_cuda_device));
     cudaCheck(cudaSetDevice(engine_id));
-    const DataType data_type = str2dtype(opts.dtype_);
-    logger.log_info(me + " Creating inference builder");
-    IBuilder* builder = createInferBuilder(logger_);
-    // Parse the caffe model to populate the network, then set the outputs.
-    // For INT8 inference, the input model must be specified with 32-bit weights.
-    logger.log_info(me + " Creating network and Caffe parser (model: " + opts.model_file_ + ")");
-    INetworkDefinition* network = builder->createNetwork();
-    ICaffeParser* caffe_parser = createCaffeParser();
-    const IBlobNameToTensor* blob_name_to_tensor = caffe_parser->parse(
-        opts.model_file_.c_str(), // *.prototxt caffe model definition
-        nullptr,       // if null, random weights?
-        *network, 
-        (data_type == DataType::kINT8 ? DataType::kFLOAT : data_type)
-    );
-    // Specify what tensors are output tensors.
-    network->markOutput(*blob_name_to_tensor->find(opts.output_name_.c_str()));
-    // Build the engine.
-    builder->setMaxBatchSize(opts.batch_size_);
-    builder->setMaxWorkspaceSize(1 << 30); 
-    // Half and INT8 precision specific options
-    if (data_type == DataType::kHALF) {
-        logger.log_info(me + " Enabling FP16 mode");
-        builder->setHalf2Mode(true);
-    } else if (data_type == DataType::kINT8) {
-        logger.log_info(me + " Enabling INT8 mode");
-        calibrator_.setBatchSize(opts.batch_size_);
-
-        // Allocate memory but before figure out size of input tensor.
-        const nvinfer1::ITensor* input_tensor = blob_name_to_tensor->find(opts.input_name_.c_str());
-        calibrator_.initialize(get_tensor_size(input_tensor), 10, opts.model_id_, opts.calibrator_cache_path_);
-
-        builder->setInt8Mode(true);
-        builder->setInt8Calibrator(&calibrator_);
-    } else {
-        logger.log_info(me + " Enabling FP32 mode");
+    // Build and cache a new engine OR load previously cached engine
+    engine_ = nullptr;
+    std::string engine_fname = "";
+    if (!opts.calibrator_cache_path_.empty()) {
+        engine_fname = fmt(
+            "%s/%s_engine_%s_%d.bin", opts.calibrator_cache_path_.c_str(), opts.model_id_.c_str(),
+                                      opts.dtype_.c_str(), opts.batch_size_
+        );
+        timer clock;
+        engine_ = load_engine_from_file(engine_fname, logger_);
+        if (engine_) {
+            logger_.log_info(fmt("%s Inference engine was loaded from file (%s) in %f ms.", me.c_str(), engine_fname.c_str(), clock.ms_elapsed()));
+        } else {
+            logger_.log_warning(fmt("%s Failed to loaded inference engine from file (%s).", me.c_str(), engine_fname.c_str()));
+        }
     }
-    // This is where we need to use calibrator
-    engine_ = builder->buildCudaEngine(*network);
+    if (!engine_) {
+        timer clock;
+        const DataType data_type = str2dtype(opts.dtype_);
+        logger.log_info(me + " Creating inference builder");
+        IBuilder* builder = createInferBuilder(logger_);
+        // Parse the caffe model to populate the network, then set the outputs.
+        // For INT8 inference, the input model must be specified with 32-bit weights.
+        logger.log_info(me + " Creating network and Caffe parser (model: " + opts.model_file_ + ")");
+        INetworkDefinition* network = builder->createNetwork();
+        ICaffeParser* caffe_parser = createCaffeParser();
+        const IBlobNameToTensor* blob_name_to_tensor = caffe_parser->parse(
+            opts.model_file_.c_str(), // *.prototxt caffe model definition
+            nullptr,       // if null, random weights?
+            *network, 
+            (data_type == DataType::kINT8 ? DataType::kFLOAT : data_type)
+        );
+        // Specify what tensors are output tensors.
+        network->markOutput(*blob_name_to_tensor->find(opts.output_name_.c_str()));
+        // Build the engine.
+        builder->setMaxBatchSize(opts.batch_size_);
+        builder->setMaxWorkspaceSize(1 << 30); 
+        // Half and INT8 precision specific options
+        if (data_type == DataType::kHALF) {
+            logger.log_info(me + " Enabling FP16 mode");
+            builder->setHalf2Mode(true);
+        } else if (data_type == DataType::kINT8) {
+            logger.log_info(me + " Enabling INT8 mode");
+            calibrator_.setBatchSize(opts.batch_size_);
+
+            // Allocate memory but before figure out size of input tensor.
+            const nvinfer1::ITensor* input_tensor = blob_name_to_tensor->find(opts.input_name_.c_str());
+            calibrator_.initialize(get_tensor_size(input_tensor), 10, opts.model_id_, opts.calibrator_cache_path_);
+
+            builder->setInt8Mode(true);
+            builder->setInt8Calibrator(&calibrator_);
+        } else {
+            logger.log_info(me + " Enabling FP32 mode");
+        }
+        // This is where we need to use calibrator
+        engine_ = builder->buildCudaEngine(*network);
+        // Destroy objects that we do not need anymore
+        network->destroy();
+        builder->destroy();
+        caffe_parser->destroy();
+        logger.log_info(me + " Cleaning buffers");
+        if (data_type == DataType::kINT8) {
+            calibrator_.freeCalibrationMemory();
+        }
+        logger_.log_info(fmt("%s Inference engine was created in %f seconds.", me.c_str(), (clock.ms_elapsed()/1000.0)));
+        if (!engine_fname.empty()) {
+            clock.restart();
+            serialize_engine_to_file(engine_, engine_fname);
+            logger_.log_info(fmt("%s Inference engine was serialized to file (%s) in %f ms.", me.c_str(), engine_fname.c_str(), clock.ms_elapsed()));
+        }
+    }
     logger.log_info(me + " Creating execution context");
     exec_ctx_ = engine_->createExecutionContext();
     if (opts.use_profiler_) {
@@ -108,7 +141,7 @@ tensorrt_inference_engine::tensorrt_inference_engine(const int engine_id, const 
         exec_ctx_->setProfiler(profiler_);
     }
     logger.log_info(me + " Getting network bindings");
-    logger.log_bindings(engine_);
+    logger.log_bindings(engine_, me);
     // We need to figure out number of elements in input/output tensors.
     // Also, we need to figure out their indices.
     check_bindings(engine_, opts.input_name_, opts.output_name_, logger_);
@@ -117,14 +150,6 @@ tensorrt_inference_engine::tensorrt_inference_engine(const int engine_id, const 
     output_idx_ = static_cast<size_t>(engine_->getBindingIndex(opts.output_name_.c_str()));
     input_sz_ = get_binding_size(engine_, input_idx_),    // Number of elements in 'data' tensor.
     output_sz_ = get_binding_size(engine_, output_idx_);  // Number of elements in 'prob' tensor.
-    // Destroy objects that we do not need anymore
-    network->destroy();
-    caffe_parser->destroy();
-    builder->destroy();
-    logger.log_info(me + " Cleaning buffers");
-    if (data_type == DataType::kINT8) {
-        calibrator_.freeCalibrationMemory();
-    }
     cudaCheck(cudaSetDevice(prev_cuda_device));
 }
     
@@ -159,7 +184,7 @@ void tensorrt_inference_engine::copy_input_to_gpu_asynch(inference_msg *msg ,cud
 void tensorrt_inference_engine::do_inference(abstract_queue<inference_msg*> &request_queue,
                                              abstract_queue<inference_msg*> &response_queue) {
     init_device();
-    if (get_env_var("TENSORRT_INFERENCE_IMPL_VER") == "1") {
+    if (get_env_var("DLBS_TENSORRT_INFERENCE_IMPL_VER") == "1") {
         do_inference1(request_queue, response_queue);
         return;
     }

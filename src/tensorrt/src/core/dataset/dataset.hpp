@@ -81,19 +81,25 @@ protected:
     inference_msg_pool* inference_msg_pool_;         //!< [input]  A pool of free tasks that can be reused to submit infer requests.
     abstract_queue<inference_msg*>* request_queue_;  //!< [output] An output data queue containing requests with real data.
     std::atomic_bool stop_;                          //!< The 'stop' flag indicating internal thread must stop.
+    // Datasets can run multiple internal threads to prefetch data in parallel. Depending on strategy,
+    // they can fail at startup due to absence of input files. The following variables are used to identify
+    // such situation and exit.
+    int num_threads_;                                //!< Number of worker threads that will do the job.
+    std::atomic_int num_live_threads_;               //!< Number of running threads - threads that have data to read.
+    std::atomic_int num_dead_threads_;               //!< Number of threads that did not start.
 public:
-    dataset(inference_msg_pool* pool, abstract_queue<inference_msg*>* request_queue) 
-        : inference_msg_pool_(pool), request_queue_(request_queue), stop_(false) {}
+    dataset(inference_msg_pool* pool, abstract_queue<inference_msg*>* request_queue, const int num_threads=1) 
+        : inference_msg_pool_(pool), request_queue_(request_queue),
+          stop_(false), num_threads_(num_threads), num_live_threads_(0), num_dead_threads_(0) {}
     virtual ~dataset() {
         if (internal_thread_) delete internal_thread_;
     }
     //!< Starts internal thread to load data into the data queue.
-    void start() {
-        internal_thread_ = new std::thread(&dataset::thread_func, this);
-    }
+    bool start();
     //!< Requests to stop internal thread and returns without waiting.
-    virtual void stop() {
+    virtual void stop(const bool wait=false) {
         stop_ = true;
+        if (wait) { join(); }
     }
     //!< Waits for internal thread to shutdown.
     void join() {
@@ -122,7 +128,7 @@ public:
 class synthetic_dataset : public dataset {
 public:
     synthetic_dataset(inference_msg_pool* pool, abstract_queue<inference_msg*>* request_queue) 
-        : dataset(pool, request_queue) {}
+        : dataset(pool, request_queue, 1) {}
     void run() override;
 };
 

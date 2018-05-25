@@ -16,21 +16,9 @@
 /**
    Completely based on giexec.cpp example in /usr/src/gie_samples/samples/giexec/
  */
-/*
-#include <iostream>
-#include <string>
-#include <random>
-#include <map>
-#include <ios>
-#include <functional>
-#include <algorithm>
-#include <chrono>
-#include <sstream>
-#include <fstream>
-#include <thread>
-#include <ctime>
-#include <string.h>
-*/
+
+#include <signal.h>
+#include <execinfo.h>
 #include "core/infer_engine.hpp"
 #include "core/dataset/dataset.hpp"
 #include "core/dataset/image_dataset.hpp"
@@ -40,38 +28,8 @@
 
 /**
  *  @brief An inference benchmark based on NVIDIA's TensorRT library.
- * 
- *  The TensorRT backend benchmarks inference with one or several GPUs. If several
- *  GPUs are provided, each GPU independently runs its own instance of inference engine.
- *  Each GPU runs exactly the same configuration - model, batch size etc. As opposed to
- *  training benchmarks, batch size does not change as number of GPUs changes. It's always
- *  per GPU batch size. 
- * 
- *  This backend provides performance results at three different levels:
- *    - Inference time is the pure inference time without any overhead associated with data ingestion
- *                including CPU <--> GPU transfers. This is upper bound for the performance. We do not
- *                prestage tensors now so it all happens sequentially:
- *                     * Copy data from CPU to GPU memory
- *                     * Run inference
- *                     * Copy results from GPU to CPU memory
- *    - Batch time is the time that includes inference time and time required to copy data to/form GPU.
- *    - Actual time that includes inference time, time associated with CPU-GPU data transfers and time
- *                associated with entire data ingestion pipeline. Copying data from storage into CPU
- *                memory, preprocessing and any other overhead is taken into account. Not all is done
- *                sequentially. In particular, data ingestion into request queue is done in multiple background
- *                threads simoultaneously with GPU computations. This time is useful to benchmark preprocessing
- *                efficiency and storage.
  */
 
-
-/**
-    AlexNet:      512x3x227x227 =  301 Mb,  8 GPUs = 2.35 Gb.
-    Inception3:    64x3x299x299 =   65 Mb
-    ResNet50:      64x3x224x224 =   37 Mb
- 
- */
-//using namespace nvinfer1;
-//using namespace nvcaffeparser1;
 namespace po = boost::program_options;
 
 void parse_command_line(int argc, char **argv,
@@ -79,7 +37,27 @@ void parse_command_line(int argc, char **argv,
                         inference_engine_opts& engine_opts, dataset_opts& data_opts,
                         logger_impl& logger);
 
+void segfault_sigaction(int signal, siginfo_t *si, void *arg) {
+    void *array[10];
+  size_t size;
+
+  // get void*'s for all entries on the stack
+  size = backtrace(array, 10);
+
+  // print out all the frames to stderr
+  fprintf(stderr, "Error: signal %d:\n", signal);
+  backtrace_symbols_fd(array, size, STDERR_FILENO);
+  exit(1);
+}
+
 int main(int argc, char **argv) {
+    // Set SIGSEGV handler
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(struct sigaction));
+    sigemptyset(&sa.sa_mask);
+    sa.sa_sigaction = segfault_sigaction;
+    sa.sa_flags   = SA_SIGINFO;
+    sigaction(SIGSEGV, &sa, NULL);
     // Create one global logger.
     logger_impl logger(std::cout);
     // Parse command line arguments
@@ -97,7 +75,7 @@ int main(int argc, char **argv) {
             std::cout << "HPE Deep Learning Benchmarking Suite - TensorRT backend" << std::endl
                       << opt_desc << std::endl
                       << "TensorRT version " << NV_GIE_MAJOR << "." << NV_GIE_MINOR << "." << NV_GIE_PATCH << std::endl;
-        return 0;
+            return 0;
         }
     } catch(po::error& e) {
         logger.log_error(e.what());
@@ -107,7 +85,7 @@ int main(int argc, char **argv) {
     logger.log_info(data_opts);
     //
     allocator *alloc(nullptr);
-    if (get_env_var("TENSORRT_DO_NOT_USE_PINNED_MEMORY") != "1") {
+    if (get_env_var("DLBS_TENSORRT_NO_PINNED_MEMORY") != "1") {
         logger.log_info("[main                  ]: Creating pinned memory allocator.");
         alloc = new pinned_memory_allocator();
     } else {
@@ -148,13 +126,19 @@ int main(int argc, char **argv) {
         }
     }
     logger.log_info("[main                  ]: Starting dataset threads");
-    data->start();
+    if (!data->start()) {
+        data->stop(true);
+        infer_msg_pool.destroy();
+        delete data;
+        delete alloc;
+        logger.log_error("[main                  ]: Some of the dataset threads failed to start. Aborting.");
+    }
     // Start pool of inference engines. This will start one thread per engine. Individual inference engines
     // will be fetching data from data queue, will be doing inference and will be submitting same task request
     // objects with inference results and statistics to decision queue.
     logger.log_info("[main                  ]: Starting engine threads");
     engine.start();
-  
+
     logger.log_info("[main                  ]: Running warmup iterations");
     for (size_t i=0; i<engine_opts.num_warmup_batches_; ++i) {
         // Do warmup iterations. Just fetch inference results from decision queue
@@ -171,7 +155,7 @@ int main(int argc, char **argv) {
     // Sync with othet processes if need to do so
     process_barrier* barrier(nullptr);
     timer synch_timer;
-    if (get_env_var("TENSORRT_SYNCH_BENCHMARKS") != "") {
+    if (get_env_var("DLBS_TENSORRT_SYNCH_BENCHMARKS") == "1") {
         engine.pause();
         barrier = new process_barrier(get_env_var("TENSORRT_SYNCH_BENCHMARKS"));
         logger.log_info(fmt("[main                  ]: Synching with other processes (%d/%d)", barrier->rank(), barrier->count()));

@@ -36,9 +36,9 @@ void fill_random(float *vec, const size_t sz) {
   std::generate(vec, vec+sz, gen);
 }
 
-std::string get_env_var(std::string const &var) {
+std::string get_env_var(std::string const &var, const std::string& default_val) {
     char *val = getenv( var.c_str() );
-    return val == nullptr ? "" : std::string(val);
+    return val == nullptr ? default_val : std::string(val);
 }
 
 
@@ -76,6 +76,31 @@ std::string fs_utils::normalize_path(std::string dir) {
         dir = dir.substr(0, pos + 1);
     dir += "/";
     return dir;
+}
+
+void fs_utils::write_data(const std::string& fname, const void* ptr, std::size_t length) {
+    if (fname != "") {
+        std::ofstream file(fname.c_str(), std::ios::binary);
+        if (file.is_open()) {
+            file.write(static_cast<const char*>(ptr), static_cast<std::streamsize>(length));
+        }
+    }
+}
+
+char* fs_utils::read_data(const std::string& fname, std::size_t& data_length) {
+    if (fname != "") {
+        std::ifstream file(fname.c_str(), std::ios::binary|std::ios::ate);
+        if (file.is_open()) {
+            auto fsize = file.tellg();
+            char* data = new char[fsize];
+            file.seekg(0, std::ios::beg);
+            file.read(data, fsize);
+            data_length = static_cast<std::size_t>(fsize);
+            return data;
+        }
+    }
+    data_length = 0;
+    return nullptr;
 }
 
 bool fs_utils::read_cache(const std::string& dir, std::vector<std::string>& fnames) {

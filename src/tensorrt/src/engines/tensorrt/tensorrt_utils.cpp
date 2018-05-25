@@ -74,27 +74,24 @@ size_t get_binding_size(ICudaEngine* engine, const int idx) {
 }
 
 
-cuda_helper::cuda_helper(const std::initializer_list<std::string>& events, const std::initializer_list<std::string>& streams) {
-   for (const auto event: events) {
-       cudaEvent_t cuda_event;
-       cudaCheck(cudaEventCreate(&cuda_event)); 
-       events_[event] = cuda_event;
-   }
-   for (const auto stream: streams) {
-       cudaStream_t cuda_strream;
-       cudaCheck(cudaStreamCreate(&cuda_strream)); 
-       streams_[stream] = cuda_strream;
-   }
+ICudaEngine* load_engine_from_file(const std::string& fname, logger_impl& logger) {
+    size_t nbytes_read(0);
+    char* data = fs_utils::read_data(fname, nbytes_read);
+    ICudaEngine* engine(nullptr);
+    if (nbytes_read > 0 && data) {
+        IRuntime *runtime = createInferRuntime(logger);
+        engine = runtime->deserializeCudaEngine(data, nbytes_read,nullptr);
+        runtime->destroy();
+        delete [] data;
+    }
+    return engine;
 }
-void cuda_helper::destroy() {
-    for (auto& event: events_) {
-        cudaCheck(cudaEventDestroy(event.second));
-    }
-    events_.clear();
 
-    for (auto& stream: streams_) {
-        cudaCheck(cudaStreamSynchronize(stream.second));
-        cudaCheck(cudaStreamDestroy(stream.second));
+void serialize_engine_to_file(ICudaEngine *engine_, const std::string& fname) {
+    if (fname.empty()) {
+        return;
     }
-    streams_.clear();
+    IHostMemory *se = engine_->serialize();
+    fs_utils::write_data(fname, se->data(), se->size());
+    se->destroy();
 }

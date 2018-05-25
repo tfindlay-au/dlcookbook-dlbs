@@ -137,7 +137,7 @@ public:
         if (do_log_) {
             logger_.log_info("[calibrator] Calibrator::writeCalibrationCache(length=" + std::to_string(length) + ")");
         }
-        write_data(get_cache_file("calibration"), ptr, length);
+        fs_utils::write_data(get_cache_file("calibration"), ptr, length);
     }
     const void* readHistogramCache(std::size_t& length/*output param*/) override { 
         if (do_log_) {
@@ -154,7 +154,7 @@ public:
         if (do_log_) {
             logger_.log_info("[calibrator] Calibrator::writeHistogramCache(length=" + std::to_string(length) + ")");
         }
-        write_data(get_cache_file("histogram"), ptr, length);
+        fs_utils::write_data(get_cache_file("histogram"), ptr, length);
     }
     void setLog(const bool do_log=true) {
         if (do_log_ || do_log) {
@@ -219,32 +219,9 @@ private:
         }
         return "";
     }
-    void write_data(const std::string& fname, const void* ptr, std::size_t length) {
-        if (fname != "") {
-            std::ofstream file(fname.c_str(), std::ios::binary);
-            if (file.is_open()) {
-                file.write(static_cast<const char*>(ptr), static_cast<std::streamsize>(length));
-            }
-        }
-    }
-    char* read_data(const std::string& fname, std::size_t& data_length) {
-        if (fname != "") {
-            std::ifstream file(fname.c_str(), std::ios::binary|std::ios::ate);
-            if (file.is_open()) {
-                auto fsize = file.tellg();
-                char* data = new char[fsize];
-                file.seekg(0, std::ios::beg);
-                file.read(data, fsize);
-                data_length = static_cast<std::size_t>(fsize);
-                return data;
-            }
-        }
-        data_length = 0;
-        return nullptr;
-    }
     void update_cache(char*& cache_data, size_t& cache_length, const std::string& fname) {
         if (cache_data == nullptr) {
-            cache_data = read_data(fname, cache_length);
+            cache_data = fs_utils::read_data(fname, cache_length);
         }
     }
 };

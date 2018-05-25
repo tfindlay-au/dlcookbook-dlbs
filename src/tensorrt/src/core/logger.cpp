@@ -60,12 +60,14 @@ void logger_impl::log_final_results(const std::vector<float>& times, const size_
     ostream_ << std::flush;
 }
 
-void logger_impl::log_bindings(ICudaEngine* engine) {
+void logger_impl::log_bindings(ICudaEngine* engine, const std::string& log_prefix) {
     std::lock_guard<std::mutex> lock(m_);
     const auto num_bindings = engine->getNbBindings();
-    ostream_ << "engine::number of bindings = " << num_bindings << "\n";
+    ostream_ << time_stamp() << " "  << log_levels_[ILogger::Severity::kINFO] 
+             << " "  << log_prefix << " Number of engine bindings is " << num_bindings << "\n";
     for (auto i=0; i<num_bindings; ++i) {
-        ostream_ << "engine::binding index = " << i << ", name = " << engine->getBindingName(i) << ", is input = " << engine->bindingIsInput(i);
+        ostream_ << time_stamp() << " "  << log_levels_[ILogger::Severity::kINFO]
+                 << " " << log_prefix << " Engine binding index = " << i << ", name = " << engine->getBindingName(i) << ", is input = " << engine->bindingIsInput(i);
 #if NV_TENSORRT_MAJOR >= 3
         const Dims shape = engine->getBindingDimensions(i);
         ostream_ << ", shape=[";

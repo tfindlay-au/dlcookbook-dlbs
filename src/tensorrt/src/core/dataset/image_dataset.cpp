@@ -148,9 +148,9 @@ image_dataset::~image_dataset() {
         if (decoders_[i]) delete decoders_[i];
 }
     
-void image_dataset::stop() {
-    dataset::stop();
+void image_dataset::stop(const bool wait) {
     prefetch_queue_.close();
+    dataset::stop(wait);
 }
     
 void image_dataset::run() {

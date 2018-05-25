@@ -49,7 +49,7 @@ public:
     image_dataset(const dataset_opts& opts, inference_msg_pool* pool,
                    abstract_queue<inference_msg*>* request_queue, logger_impl& logger);
     ~image_dataset();
-    void stop() override;
+    void stop(const bool wait=false) override;
     void run() override;
     
     static float benchmark(const std::string dir, const size_t batch_size=512, const size_t img_size=227,

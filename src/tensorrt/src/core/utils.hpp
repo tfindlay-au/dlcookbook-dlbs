@@ -46,7 +46,7 @@ std::string S(const T &t) { return std::to_string(t); }
 template<>
 std::string S<bool>(const bool &t);
 
-std::string get_env_var(std::string const &var);
+std::string get_env_var(std::string const &var, const std::string& default_val="");
 
 
 /**
@@ -90,6 +90,20 @@ public:
      * @param dir A directory name.
      */
     static std::string normalize_path(std::string dir);
+    /**
+     * @brief Write binary data to a file.
+     * @param fname Name of a file. If exists, it will be overwritten.
+     * @param ptr Pointer to a data.
+     * @param length Number of bytes to write.
+     */
+    static void  write_data(const std::string& fname, const void* ptr, std::size_t length);
+    /**
+     * @brief Read binary data from a file.
+     * @param fname Name of a file.
+     * @param data_length Number of bytes read.
+     * @return Pointer to a data. User is responsible for deallocating this memory (delete [] p;)
+     */
+    static char* read_data(const std::string& fname, std::size_t& data_length);
     /**
     * @brief Read text file \p name line by line putting lines into \p lines.
     * @param name[in] A file name.

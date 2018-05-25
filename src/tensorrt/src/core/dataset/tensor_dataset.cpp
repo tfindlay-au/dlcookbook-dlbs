@@ -24,16 +24,27 @@
 
 void tensor_dataset::prefetcher_func(tensor_dataset* myself,
                                      const size_t prefetcher_id, const size_t num_prefetchers) {
-    sharded_vector<std::string> my_files(myself->file_names_, myself->prefetchers_.size(), prefetcher_id);
-    if (!my_files.has_next()) {
+    std::string split_strategy = get_env_var("DLBS_TENSORRT_DATASET_SPLIT", "uniform");
+    sharded_vector<std::string> *my_files(nullptr);
+    std::vector<std::string> fnames;
+    if (split_strategy == "uniform") {
+        my_files = new sharded_vector<std::string>(myself->file_names_, myself->prefetchers_.size(), prefetcher_id);
+    } else {
+        fnames = myself->file_names_;
+        std::random_shuffle(fnames.begin(), fnames.end());
+        my_files = new sharded_vector<std::string>(fnames, 1, 0);
+    }
+    if (!my_files->has_next()) {
         myself->logger_.log_warning(fmt(
             "[prefetcher       %02d/%02d]: there is no work for me (number of files in dataset %d)",
             prefetcher_id, num_prefetchers, int(myself->file_names_.size())
         ));
+        myself->num_dead_threads_ += 1;
         return;
     }
+    myself->num_live_threads_ += 1;
     std::ostringstream oss;
-    oss << my_files;
+    oss << *my_files;
     myself->logger_.log_info(fmt("[prefetcher       %02d/%02d]: %s", prefetcher_id, num_prefetchers, oss.str().c_str()));
     //myself->logger_.log_info(fmt("[prefetcher       %02d/%02d]: image read strategy - low level C IO api with POSIX_FADV_DONTNEED", prefetcher_id, num_prefetchers));
         
@@ -69,7 +80,7 @@ void tensor_dataset::prefetcher_func(tensor_dataset* myself,
                 continue;
             }
             if (!bfile.is_opened()) {
-                bfile.open(my_files.next());
+                bfile.open(my_files->next());
             }
 
             // Try to read as many images in one read call as we need
@@ -87,6 +98,7 @@ void tensor_dataset::prefetcher_func(tensor_dataset* myself,
         }
     } catch(queue_closed) {
     }
+    delete my_files;
     myself->logger_.log_info(fmt(
         "[prefetcher       %02d/%02d]: {fetch:%.5f}-->--[load:%.5f]-->--{submit:%.5f}",
         prefetcher_id, num_prefetchers, fetch.value(), load.value(), submit.value()
@@ -95,7 +107,7 @@ void tensor_dataset::prefetcher_func(tensor_dataset* myself,
 
 tensor_dataset::tensor_dataset(const dataset_opts& opts, inference_msg_pool* pool,
                                abstract_queue<inference_msg*>* request_queue, logger_impl& logger)
-: dataset(pool, request_queue), opts_(opts), logger_(logger) {
+: dataset(pool, request_queue, opts_.num_prefetchers_), opts_(opts), logger_(logger) {
 
     fs_utils::initialize_dataset(opts_.data_dir_, file_names_);
     if (opts.shuffle_files_) {

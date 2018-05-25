@@ -75,7 +75,7 @@ public:
                            const std::string& key_prefix="", const bool report_times=true);
   
     // Print engine bindings (input/output blobs)
-    void log_bindings(ICudaEngine* engine);
+    void log_bindings(ICudaEngine* engine, const std::string& log_prefix);
 
     void log(Severity severity, const char* msg) override { log_internal(severity, msg); }
 
