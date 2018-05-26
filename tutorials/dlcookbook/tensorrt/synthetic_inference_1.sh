@@ -16,12 +16,12 @@ python $dlbs run \
        -Ptensorrt.data_dir='""'\
        -Pexp.dtype='"float16"'\
        -Pruntime.launcher='"TENSORRT_INFERENCE_IMPL_VER=latest"'\
-       -Vexp.gpus='["0,1,2,3"]'\
+       -Vexp.gpus='["0"]'\
        -Vexp.model='["alexnet_owt"]'\
-       -Vexp.replica_batch='[64]'\
-       -Pexp.num_warmup_batches=50\
-       -Pexp.num_batches=500\
-       -Ptensorrt.inference_queue_size=32\
+       -Vexp.replica_batch='[32]'\
+       -Pexp.num_warmup_batches=10\
+       -Pexp.num_batches=10\
+       -Ptensorrt.inference_queue_size=8\
        -Pexp.log_file='"${BENCH_ROOT}/logs/synthetic/${exp.model}_${exp.dtype}_${exp.replica_batch}_${exp.num_gpus}.log"'\
        -Pexp.phase='"inference"'\
        -Pexp.docker=true\

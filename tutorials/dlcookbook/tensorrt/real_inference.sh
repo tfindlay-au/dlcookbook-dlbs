@@ -13,16 +13,18 @@ loglevel=warning
 rm -rf ./logs/real
 mkdir -p ./logs/real
 #numactl --localalloc --physcpubind=0-17 \
+#if false; then
 python $dlbs run \
        --log-level=$loglevel\
-       -Pexp.docker_args='"--rm --ipc=host"'\
-       -Pexp.dtype='"float32"'\
-       -Vexp.gpus='["0,1,2,3,4,5,6,7"]'\
+       -Pexp.docker_args='"--rm --ipc=host --privileged"'\
+       -Pruntime.launcher='"CUDA_VISIBLE_DEVICES=0,1,2,3 DLBS_TENSORRT_SYNCH_BENCHMARKS=0,2,dlbs_ipc numactl --localalloc --physcpubind=0-17"'\
+       -Pexp.dtype='"float16"'\
+       -Vexp.gpus='["0,1,2,3"]'\
        -Vexp.model='["resnet50"]'\
-       -Vexp.replica_batch='[256,128]'\
+       -Vexp.replica_batch='[128]'\
        -Pexp.num_warmup_batches=100\
-       -Pexp.num_batches=350\
-       -Pexp.data_dir='"/lvol/serebrya/datasets/tensorrt227/uchar"'\
+       -Pexp.num_batches=700\
+       -Pexp.data_dir='"/dev/shm/tensorrt227/numa0/"'\
        -Ptensorrt.data_name='"tensors1"'\
        -Ptensorrt.num_prefetchers=8\
        -Ptensorrt.inference_queue_size=32\
@@ -30,32 +32,32 @@ python $dlbs run \
        -Pexp.phase='"inference"'\
        -Pexp.docker=true\
        -Pexp.docker_image='"hpe/tensorrt:cuda9-cudnn7"'\
-       -Pexp.framework='"tensorrt"'
-
-if false; then
-numactl --localalloc --physcpubind=18-35 \
+       -Pexp.framework='"tensorrt"' &
+#fi
+#if false; then
+#export CUDA_VISIBLE_DEVICES=4,6
 python $dlbs run \
        --log-level=$loglevel\
-       -Pruntime.launcher='"TENSORRT_SYNCH_BENCHMARKS=1,2,dlbs_ipc  "'\
-       -Pexp.docker_args='"--rm --ipc=host"'\
+       -Pexp.docker_args='"--rm --ipc=host --privileged"'\
+       -Pruntime.launcher='"CUDA_VISIBLE_DEVICES=4,5,6,7 DLBS_TENSORRT_SYNCH_BENCHMARKS=1,2,dlbs_ipc  numactl --localalloc --physcpubind=18-35 "'\
        -Pexp.dtype='"float16"'\
-       -Vexp.gpus='["4"]'\
-       -Vexp.model='["alexnet_owt"]'\
-       -Vexp.replica_batch='[1024]'\
-       -Pexp.num_warmup_batches=50\
-       -Pexp.num_batches=500\
+       -Vexp.gpus='["0,1,2,3"]'\
+       -Vexp.model='["resnet50"]'\
+       -Vexp.replica_batch='[128]'\
+       -Pexp.num_warmup_batches=100\
+       -Pexp.num_batches=700\
        -Pexp.data_dir='"/dev/shm/tensorrt227/numa1"'\
        -Ptensorrt.data_name='"tensors1"'\
        -Ptensorrt.num_prefetchers=8\
-       -Ptensorrt.inference_queue_size=16\
+       -Ptensorrt.inference_queue_size=32\
        -Pexp.log_file='"${BENCH_ROOT}/logs/real/${exp.model}_${exp.effective_batch}_${exp.num_gpus}_1.log"'\
        -Pexp.phase='"inference"'\
        -Pexp.docker=true\
        -Pexp.docker_image='"hpe/tensorrt:cuda9-cudnn7"'\
        -Pexp.framework='"tensorrt"' &
-fi
-#wait
-params="exp.status,exp.framework_title,exp.replica_batch,exp.effective_batch,results.time,results.throughput,exp.model_title,exp.gpus,exp.dtype"
+#fi
+wait
+params="exp.status,exp.framework_title,exp.replica_batch,exp.effective_batch,results.time,results.throughput,exp.model_title,exp.gpus,exp.dtype,results.mgpu_effective_throughput"
 python $parser ./logs/real/*.log --output_params ${params}
 
 #-Pexp.data_dir='"/lvol/serebrya/datasets/tensorrt_uchar_chunks"'\
