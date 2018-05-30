@@ -45,7 +45,7 @@ If you need to run benchmarks with real data, make sure you read the following:
 2. Convert images to a binary format with [images2tensors](./images2tensors.md)
    tool.
 3. Find out at what rate you can stream images from your storage with
-   [benchmark_tensor_dataset](./benchmark_tensor_dataset.md) tool.
+   [benchmark_tensor_dataset](./dataset_benchmarks.md) tool.
 4. Additionally, the inference benchmark tool can be configured with
    [environment variables](./inference_benchmarks.md).
 
