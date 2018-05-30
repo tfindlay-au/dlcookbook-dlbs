@@ -3,7 +3,9 @@ export BENCH_ROOT=$( cd $( dirname "${BASH_SOURCE[0]}" ) && pwd )
 export CUDA_CACHE_PATH=/dev/shm/cuda_cache
 #------------------------------------------------------------------------------#
 # Warmup system and/or run storage/network benchmarks by streaming images into
-# host memory and measuring the throughput.
+# host memory and measuring the throughput. This will provide an intuition on what
+# maximal throughput can be achieved taking into account only ability of a system
+# to stream data from storage to host memory.
 #------------------------------------------------------------------------------#
 data_dir=/path/to/input/dataset   # This datset needs to be created with images2tensors tool.
                                   # Use ./make_tensor_dataset.sh script to create this data.
@@ -19,14 +21,14 @@ num_warmup_batches=500            # Number of warmup iterations.
 num_batches=4000                  # Number of benchmark iterations.
 
 # We will run this command in a container. Do not change this line.
-exec="benchmark_tensor_dataset --data_dir /mnt/dataset --batch_size=${batch_size}"
-exec="${exec} --img_size ${img_size} --num_prefetchers=${num_prefetchers} --dtype=${dtype}"
+exec="benchmark_tensor_dataset --data_dir=/mnt/dataset --batch_size=${batch_size}"
+exec="${exec} --img_size=${img_size} --num_prefetchers=${num_prefetchers} --dtype=${dtype}"
 exec="${exec} --prefetch_pool_size=${num_preallocated_batches} --num_warmup_batches=${num_warmup_batches}"
 exec="${exec} --num_batches=${num_batches}"
 
-docker run  -ti \
-            --rm \
-            --volume=${data_dir}:/mnt/dataset  \
-            hpe/tensorrt:cuda9-cudnn7 \
-            /bin/bash -c "${exec}"
+docker run -ti \
+           --rm \
+           --volume=${data_dir}:/mnt/dataset  \
+           hpe/tensorrt:cuda9-cudnn7 \
+           /bin/bash -c "${exec}"
 exit 0

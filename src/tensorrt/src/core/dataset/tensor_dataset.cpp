@@ -55,7 +55,12 @@ void tensor_dataset::prefetcher_func(tensor_dataset* myself,
     
     inference_msg *output(nullptr);
     size_t num_images_in_batch = 0;
-    binary_file bfile(myself->opts_.dtype_, true);
+    const bool advise_no_cache = (get_env_var("DLBS_TENSORRT_NO_POSIX_FADV_DONTNEED") != "1");
+    myself->logger_.log_warning(fmt(
+        "[prefetcher       %02d/%02d]: will advise OS to not cache dataset files: %d",
+        prefetcher_id, num_prefetchers, int(advise_no_cache)
+    ));
+    binary_file bfile(myself->opts_.dtype_, advise_no_cache);
     try {
         timer clock;
         clock.restart();
