@@ -7,7 +7,10 @@ dlbs=$DLBS_ROOT/python/dlbs/experimenter.py
 parser=$DLBS_ROOT/python/dlbs/logparser.py
 loglevel=warning
 #------------------------------------------------------------------------------#
-# Run single process multi-GPU inference with synthetic/real data.
+# Run single process multi-GPU inference with synthetic/real data. What needs to be
+# changed here:
+#  exp.gpus, exp.model, exp.replica_batch, exp.num_warmup_batches, exp.num_batches,
+#  tensorrt.inference_queue_size, tensorrt.data_dir, tensorrt.data_name
 #------------------------------------------------------------------------------#
 rm -rf ./logs/sprocess
 python $dlbs run \
