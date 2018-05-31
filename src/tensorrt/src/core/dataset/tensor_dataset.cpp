@@ -152,7 +152,9 @@ float tensor_dataset::benchmark(const std::string dir, const size_t batch_size, 
     tensor_dataset data(opts, &pool, &request_queue, logger);
         
     const float throughput = dataset::benchmark(&data, num_warmup_batches, num_batches, logger);
-    logger.log_info(fmt("[benchmarks            ]: num_readers=%d, throughput=%.2f", opts.num_prefetchers_, throughput));
+    if (throughput >= 0) {
+        logger.log_info(fmt("[benchmarks            ]: num_readers=%d, throughput=%.2f", opts.num_prefetchers_, throughput));
+    }
     data.join();
     return throughput;
 }

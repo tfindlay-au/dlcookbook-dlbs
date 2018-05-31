@@ -46,10 +46,14 @@ int main(int argc, char **argv) {
         data_dir, batch_size, img_size, num_prefetchers, prefetch_pool_size,
         num_warmup_batches, num_batches, dtype
     );
-    // 3 channels times number of elements per channel times element size in bytes devided by bytes in megabyte
-    const float img_mb = float(3*img_size*img_size)*(dtype == "float" ? 4 : 1) / (1024*1024);
-    const float mb_sec = images_sec * img_mb;
-    logger.log_info(fmt("[benchmarks            ]: images/sec=%f, MB/sec=%f", images_sec, mb_sec));
+    if (images_sec >= 0) {
+        // 3 channels times number of elements per channel times element size in bytes devided by bytes in megabyte
+        const float img_mb = float(3*img_size*img_size)*(dtype == "float" ? 4 : 1) / (1024*1024);
+        const float mb_sec = images_sec * img_mb;
+        logger.log_info(fmt("[benchmarks            ]: images/sec=%f, MB/sec=%f", images_sec, mb_sec));
+    } else {
+        logger.log_warning("[benchmarks            ]: Benchmark returned error code indicating there was an error.");
+    }
     
     
 }

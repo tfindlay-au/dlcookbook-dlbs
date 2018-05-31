@@ -7,9 +7,9 @@ server multiple purposes:
 
 
 ### Installation
-The benchmark tool can be built in docker container or bare metal. In both cases,
-you need to download/install TensorRT package. We currently use version 3.0.4 and
-make sure you have the following packages downloaded/installed:
+The inference benchmark tool can be built in docker container or bare metal. In both
+cases, you need to download/install TensorRT package. We currently use version 3.0.4
+and make sure you have the following packages downloaded/installed:
 ```
 nv-tensorrt-repo-ubuntu1604-ga-cuda9.0-trt3.0.4-20180208_1-1_amd64.deb
 ```

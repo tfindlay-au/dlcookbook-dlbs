@@ -39,7 +39,10 @@ std::ostream &operator<<(std::ostream &os, dataset_opts const &opts) {
 }
 
 float dataset::benchmark(dataset* ds, const int num_warmup_batches, const int num_batches, logger_impl &logger) {
-    ds->start();
+    if (!ds->start()) {
+        ds->stop(true);
+        return -1;
+    }
     // N warmup iterations
     logger.log_info(fmt("[benchmarks            ]: running %d warmup iterations", num_warmup_batches));
     for (int i=0; i<num_warmup_batches; ++i) {
