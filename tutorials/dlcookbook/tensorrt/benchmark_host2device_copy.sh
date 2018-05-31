@@ -32,5 +32,5 @@ num_batches=100        # Number of benchmark iterations.
 [ "$pinned_mem" == "true" ] && pinned="--pinned" || pinned=""
 # We will run this command in a container. Do not change this line.
 exec="benchmark_host2device_copy --gpu=$gpu --size=$size $pinned --num_warmup_batches=${num_warmup_batches} --num_batches=${num_batches}"
-docker run -ti --rm hpe/tensorrt:cuda9-cudnn7 /bin/bash -c "${exec}"
+nvidia-docker run -ti --rm hpe/tensorrt:cuda9-cudnn7 /bin/bash -c "${exec}"
 exit 0
