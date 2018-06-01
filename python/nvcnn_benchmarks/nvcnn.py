@@ -26,8 +26,8 @@ Differences from original nvcnn.py:
     do not support real data, only dummy. The original acoustic model uses 540 input
     features (MFCC coefficients). To make compatible with CNN inputs, it emulates those
     inputs with 23x23 image that gets flatten right away.
-
 """
+
 
 """
 Changelog:
@@ -1353,8 +1353,8 @@ def main():
     cmdline.add_argument('-m', '--model', required=True,
                          help="""Name of model to run:
                          trivial, lenet,
-                         alexnet, alenet_owt, googlenet, vgg[11,13,16,19],
-                         inception[3,4], resnet[18,34,50,101,152,200,269],
+                         alexnet, googlenet, vgg[11,13,16,19],
+                         inception[3,4], resnet[18,34,50,101,152],
                          resnext[50,101,152], inception-resnet2.""")
     cmdline.add_argument('--data_dir', default=None,
                          help="""Path to dataset in TFRecord format
@@ -1703,7 +1703,7 @@ def main():
         speed_mean = np.mean(speeds)
         if nstep > 2:
             stdev = np.std(speeds, ddof=1)
-            speed_uncertainty = stdev / np.sqrt(float(nstep))
+            speed_uncertainty = np.std(speeds, ddof=1) / np.sqrt(float(nstep))
         else:
             stdev = float('nan')
             speed_uncertainty = float('nan')
